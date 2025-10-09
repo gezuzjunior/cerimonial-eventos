@@ -73,7 +73,7 @@ function SortableItem({ autoridade, children }: { autoridade: Autoridade; childr
   );
 }
 
-// Dados de exemplo de autoridades (simulando busca automática)
+// Dados oficiais de autoridades estaduais e federais de Mato Grosso
 const autoridadesIniciais: Autoridade[] = [
   {
     id: "1",
@@ -125,11 +125,71 @@ const autoridadesIniciais: Autoridade[] = [
   },
   {
     id: "5",
+    nome: "Carlos Fávaro",
+    cargo: "Senador da República",
+    orgao: "Senado Federal",
+    nivelFederativo: "Federal",
+    precedencia: 5,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "6",
     nome: "Emanuel Pinheiro",
     cargo: "Prefeito Municipal",
     orgao: "Prefeitura de Cuiabá",
     nivelFederativo: "Municipal",
-    precedencia: 5,
+    precedencia: 6,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "7",
+    nome: "Abilio Brunini",
+    cargo: "Prefeito Municipal",
+    orgao: "Prefeitura de Várzea Grande",
+    nivelFederativo: "Municipal",
+    precedencia: 7,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "8",
+    nome: "Virgilio Mendes",
+    cargo: "Secretário de Estado de Fazenda",
+    orgao: "SEFAZ-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 8,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "9",
+    nome: "Gilberto Figueiredo",
+    cargo: "Secretário de Estado de Saúde",
+    orgao: "SES-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 9,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "10",
+    nome: "Alan Resende Porto",
+    cargo: "Secretário de Estado de Educação",
+    orgao: "SEDUC-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 10,
     presente: false,
     incluirDispositivo: false,
     incluirFalas: false,
@@ -145,6 +205,7 @@ export default function CerimonialFacil() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginData, setLoginData] = useState({ usuario: "", senha: "" });
   const [showLogin, setShowLogin] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
   
   // Estados para cadastro
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -343,7 +404,7 @@ export default function CerimonialFacil() {
 
     setAutoridades(prev => {
       // Filtrar apenas autoridades das falas
-      const autoridadesFala = prev.filter(a => a.incluirFalas).sort((a, b) => b.precedencia - a.precedencia);
+      const autoridadesFala = prev.filter(a => a.incluirFalas).sort((a, b) => a.ordemFala - b.ordemFala);
       const autoridadesOutras = prev.filter(a => !a.incluirFalas);
       
       // Encontrar índices
@@ -377,9 +438,9 @@ export default function CerimonialFacil() {
   );
 
   // Dados derivados
-  const autoridadesPresentes = autoridades.filter(a => a.presente);
+  const autoridadesPresentes = autoridades.filter(a => a.presente).sort((a, b) => a.precedencia - b.precedencia);
   const autoridadesDispositivo = autoridades.filter(a => a.incluirDispositivo).sort((a, b) => a.precedencia - b.precedencia);
-  const autoridadesFala = autoridades.filter(a => a.incluirFalas).sort((a, b) => b.precedencia - a.precedencia); // Ordem inversa (menor para maior autoridade)
+  const autoridadesFala = autoridades.filter(a => a.incluirFalas).sort((a, b) => a.ordemFala - b.ordemFala);
 
   // Tela de login
   if (showLogin) {
@@ -410,22 +471,34 @@ export default function CerimonialFacil() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="senha">Senha</Label>
-              <Input
-                id="senha"
-                type="password"
-                value={loginData.senha}
-                onChange={(e) => setLoginData(prev => ({ ...prev, senha: e.target.value }))}
-                placeholder="Digite sua senha"
-                onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
-              />
+              <div className="relative">
+                <Input
+                  id="senha"
+                  type={showPassword ? "text" : "password"}
+                  value={loginData.senha}
+                  onChange={(e) => setLoginData(prev => ({ ...prev, senha: e.target.value }))}
+                  placeholder="Digite sua senha"
+                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4 text-gray-400" />
+                  ) : (
+                    <Eye className="h-4 w-4 text-gray-400" />
+                  )}
+                </Button>
+              </div>
             </div>
             <Button onClick={handleLogin} className="w-full">
               Entrar
             </Button>
-            <div className="text-xs text-gray-500 text-center">
-              <p>Admin: Gezuz / Gil080123*</p>
-              <p>Equipe: admin / admin</p>
-            </div>
           </CardContent>
         </Card>
       </div>
@@ -669,7 +742,7 @@ export default function CerimonialFacil() {
             </Card>
           </TabsContent>
 
-          {/* ABA 2 - REGISTRO DE PRESENÇA */}
+          {/* ABA 2 - REGISTRO DE PRESENÇA (EM ORDEM DE PRECEDÊNCIA) */}
           <TabsContent value="presenca" className="space-y-6">
             <Card>
               <CardHeader>
@@ -678,14 +751,17 @@ export default function CerimonialFacil() {
                   Registro de Presença
                 </CardTitle>
                 <CardDescription>
-                  Autoridades marcadas como "OK" ({autoridadesPresentes.length} presentes)
+                  Autoridades presentes em ordem de precedência ({autoridadesPresentes.length} presentes)
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px] pr-4">
                   <div className="space-y-3">
-                    {autoridadesPresentes.map((autoridade) => (
+                    {autoridadesPresentes.map((autoridade, index) => (
                       <div key={autoridade.id} className="flex items-center space-x-3 p-3 bg-white border rounded-lg shadow-sm">
+                        <Badge variant="default" className="min-w-[32px] h-6 flex items-center justify-center text-xs">
+                          {index + 1}º
+                        </Badge>
                         <Checkbox
                           id={`dispositivo-${autoridade.id}`}
                           checked={autoridade.incluirDispositivo}
@@ -718,7 +794,7 @@ export default function CerimonialFacil() {
             </Card>
           </TabsContent>
 
-          {/* ABA 3 - DISPOSITIVO */}
+          {/* ABA 3 - DISPOSITIVO (COM DRAG AND DROP) */}
           <TabsContent value="dispositivo" className="space-y-6">
             <Card>
               <CardHeader>
@@ -727,7 +803,7 @@ export default function CerimonialFacil() {
                   Dispositivo Oficial
                 </CardTitle>
                 <CardDescription>
-                  Ordem de precedência (maior → menor autoridade) - {autoridadesDispositivo.length} no dispositivo
+                  Ordem de precedência (arraste para reordenar) - {autoridadesDispositivo.length} no dispositivo
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -778,7 +854,7 @@ export default function CerimonialFacil() {
             </Card>
           </TabsContent>
 
-          {/* ABA 4 - FALAS */}
+          {/* ABA 4 - FALAS (COM DRAG AND DROP) */}
           <TabsContent value="falas" className="space-y-6">
             <Card>
               <CardHeader>
@@ -787,7 +863,7 @@ export default function CerimonialFacil() {
                   Ordem das Falas
                 </CardTitle>
                 <CardDescription>
-                  Ordem de precedência (menor → maior autoridade) - {autoridadesFala.length} oradores
+                  Ordem das falas (arraste para reordenar) - {autoridadesFala.length} oradores
                 </CardDescription>
               </CardHeader>
               <CardContent>
