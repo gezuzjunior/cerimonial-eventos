@@ -25,12 +25,16 @@ import {
   EyeOff,
   LogOut,
   RefreshCw,
-  Search
+  Search,
+  Database,
+  Wifi,
+  WifiOff
 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { supabase, autoridadesService, AutoridadeDB } from '@/lib/supabase';
 
 // Tipos
 interface Autoridade {
@@ -45,6 +49,158 @@ interface Autoridade {
   incluirFalas: boolean;
   ordemFala: number;
 }
+
+// Dados das autoridades de Mato Grosso (para inicialização) - com UUIDs válidos
+const autoridadesIniciais: Autoridade[] = [
+  {
+    id: "550e8400-e29b-41d4-a716-446655440001",
+    nome: "Mauro Mendes Ferreira",
+    cargo: "Governador do Estado",
+    orgao: "Governo do Estado de Mato Grosso",
+    nivelFederativo: "Estadual",
+    precedencia: 1,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440002",
+    nome: "Otaviano Olavo Pivetta",
+    cargo: "Vice-Governador do Estado",
+    orgao: "Governo do Estado de Mato Grosso",
+    nivelFederativo: "Estadual",
+    precedencia: 2,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440003",
+    nome: "Eduardo Botelho",
+    cargo: "Secretário de Estado de Fazenda",
+    orgao: "SEFAZ-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 3,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440004",
+    nome: "Gilberto Figueiredo",
+    cargo: "Secretário de Estado de Saúde",
+    orgao: "SES-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 4,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440005",
+    nome: "Alan Resende Porto",
+    cargo: "Secretário de Estado de Educação",
+    orgao: "SEDUC-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 5,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440006",
+    nome: "César Miranda",
+    cargo: "Secretário de Estado de Segurança Pública",
+    orgao: "SESP-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 6,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440007",
+    nome: "Romero Reis de Souza",
+    cargo: "Secretário de Estado de Infraestrutura e Logística",
+    orgao: "SINFRA-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 7,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440008",
+    nome: "Basílio Bezerra Neto",
+    cargo: "Secretário de Estado de Desenvolvimento Econômico",
+    orgao: "SEDEC-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 8,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440009",
+    nome: "Virgílio Mendes",
+    cargo: "Secretário de Estado de Meio Ambiente",
+    orgao: "SEMA-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 9,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  },
+  {
+    id: "550e8400-e29b-41d4-a716-446655440010",
+    nome: "Silvano Amaral",
+    cargo: "Secretário de Estado de Agricultura Familiar e Assuntos Fundiários",
+    orgao: "SEAF-MT",
+    nivelFederativo: "Estadual",
+    precedencia: 10,
+    presente: false,
+    incluirDispositivo: false,
+    incluirFalas: false,
+    ordemFala: 0
+  }
+];
+
+// Função para converter AutoridadeDB para Autoridade
+const dbToAutoridade = (db: AutoridadeDB): Autoridade => ({
+  id: db.id,
+  nome: db.nome,
+  cargo: db.cargo,
+  orgao: db.orgao,
+  nivelFederativo: db.nivel_federativo,
+  precedencia: db.precedencia,
+  presente: db.presente,
+  incluirDispositivo: db.incluir_dispositivo,
+  incluirFalas: db.incluir_falas,
+  ordemFala: db.ordem_fala
+});
+
+// Função para converter Autoridade para AutoridadeDB
+const autoridadeToDb = (autoridade: Autoridade): Omit<AutoridadeDB, 'created_at' | 'updated_at'> => ({
+  id: autoridade.id,
+  nome: autoridade.nome,
+  cargo: autoridade.cargo,
+  orgao: autoridade.orgao,
+  nivel_federativo: autoridade.nivelFederativo,
+  precedencia: autoridade.precedencia,
+  presente: autoridade.presente,
+  incluir_dispositivo: autoridade.incluirDispositivo,
+  incluir_falas: autoridade.incluirFalas,
+  ordem_fala: autoridade.ordemFala
+});
 
 // Componente para item arrastável
 function SortableItem({ autoridade, children }: { autoridade: Autoridade; children: React.ReactNode }) {
@@ -73,130 +229,6 @@ function SortableItem({ autoridade, children }: { autoridade: Autoridade; childr
   );
 }
 
-// Dados oficiais de autoridades estaduais e federais de Mato Grosso
-const autoridadesIniciais: Autoridade[] = [
-  {
-    id: "1",
-    nome: "Mauro Mendes Ferreira",
-    cargo: "Governador do Estado",
-    orgao: "Governo do Estado de Mato Grosso",
-    nivelFederativo: "Estadual",
-    precedencia: 1,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "2", 
-    nome: "Otaviano Olavo Pivetta",
-    cargo: "Vice-Governador do Estado",
-    orgao: "Governo do Estado de Mato Grosso",
-    nivelFederativo: "Estadual",
-    precedencia: 2,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "3",
-    nome: "Jayme Verissimo de Campos Junior",
-    cargo: "Senador da República",
-    orgao: "Senado Federal",
-    nivelFederativo: "Federal",
-    precedencia: 3,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "4",
-    nome: "Wellington Fagundes",
-    cargo: "Senador da República",
-    orgao: "Senado Federal",
-    nivelFederativo: "Federal",
-    precedencia: 4,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "5",
-    nome: "Carlos Fávaro",
-    cargo: "Senador da República",
-    orgao: "Senado Federal",
-    nivelFederativo: "Federal",
-    precedencia: 5,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "6",
-    nome: "Emanuel Pinheiro",
-    cargo: "Prefeito Municipal",
-    orgao: "Prefeitura de Cuiabá",
-    nivelFederativo: "Municipal",
-    precedencia: 6,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "7",
-    nome: "Abilio Brunini",
-    cargo: "Prefeito Municipal",
-    orgao: "Prefeitura de Várzea Grande",
-    nivelFederativo: "Municipal",
-    precedencia: 7,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "8",
-    nome: "Virgilio Mendes",
-    cargo: "Secretário de Estado de Fazenda",
-    orgao: "SEFAZ-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 8,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "9",
-    nome: "Gilberto Figueiredo",
-    cargo: "Secretário de Estado de Saúde",
-    orgao: "SES-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 9,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "10",
-    nome: "Alan Resende Porto",
-    cargo: "Secretário de Estado de Educação",
-    orgao: "SEDUC-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 10,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  }
-];
-
 export default function CerimonialFacil() {
   // Estados principais
   const [autoridades, setAutoridades] = useState<Autoridade[]>([]);
@@ -206,6 +238,9 @@ export default function CerimonialFacil() {
   const [loginData, setLoginData] = useState({ usuario: "", senha: "" });
   const [showLogin, setShowLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   
   // Estados para cadastro
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -228,23 +263,155 @@ export default function CerimonialFacil() {
     })
   );
 
-  // Carregar dados do localStorage na inicialização
-  useEffect(() => {
-    const dadosSalvos = localStorage.getItem('cerimonial-autoridades');
-    if (dadosSalvos) {
-      try {
-        const autoridadesSalvas = JSON.parse(dadosSalvos);
-        setAutoridades(autoridadesSalvas);
-      } catch (error) {
-        console.error('Erro ao carregar dados salvos:', error);
-        setAutoridades(autoridadesIniciais);
+  // Função para inicializar dados no Supabase
+  const inicializarDadosSupabase = async () => {
+    try {
+      // Verificar se já existem dados
+      const dadosExistentes = await autoridadesService.getAll();
+      
+      if (dadosExistentes.length === 0) {
+        // Inserir dados iniciais
+        const promises = autoridadesIniciais.map(autoridade => 
+          autoridadesService.create(autoridadeToDb(autoridade))
+        );
+        await Promise.all(promises);
+        toast.success("Dados iniciais inseridos no banco!");
       }
-    } else {
-      setAutoridades(autoridadesIniciais);
+      
+      return dadosExistentes.length > 0 ? dadosExistentes.map(dbToAutoridade) : autoridadesIniciais;
+    } catch (error) {
+      console.error('Erro ao inicializar dados:', error);
+      toast.error("Erro ao conectar com o banco. Usando dados locais.");
+      return autoridadesIniciais;
     }
-  }, []);
+  };
 
-  // Salvar dados no localStorage sempre que autoridades mudarem
+  // Função para carregar dados do Supabase
+  const carregarDadosSupabase = async () => {
+    try {
+      setIsLoading(true);
+      const dados = await autoridadesService.getAll();
+      const autoridadesConvertidas = dados.map(dbToAutoridade);
+      setAutoridades(autoridadesConvertidas);
+      setIsConnected(true);
+      setIsOnline(true);
+      toast.success("Dados sincronizados com o banco!");
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      setIsConnected(false);
+      setIsOnline(false);
+      
+      // Fallback para dados locais
+      const dadosLocais = localStorage.getItem('cerimonial-autoridades');
+      if (dadosLocais) {
+        try {
+          const autoridadesSalvas = JSON.parse(dadosLocais);
+          setAutoridades(autoridadesSalvas);
+          toast.warning("Usando dados locais - sem conexão com o banco");
+        } catch {
+          setAutoridades(autoridadesIniciais);
+          toast.warning("Usando dados padrão - erro nos dados locais");
+        }
+      } else {
+        setAutoridades(autoridadesIniciais);
+        toast.warning("Usando dados padrão - sem conexão");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Configurar subscription para tempo real
+  useEffect(() => {
+    let subscription: any = null;
+
+    const setupRealtimeSubscription = () => {
+      subscription = supabase
+        .channel('autoridades_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'autoridades'
+          },
+          (payload) => {
+            console.log('Mudança detectada:', payload);
+            
+            if (payload.eventType === 'INSERT') {
+              const novaAutoridade = dbToAutoridade(payload.new as AutoridadeDB);
+              setAutoridades(prev => {
+                const existe = prev.find(a => a.id === novaAutoridade.id);
+                if (!existe) {
+                  toast.info(`Nova autoridade adicionada: ${novaAutoridade.nome}`);
+                  return [...prev, novaAutoridade].sort((a, b) => a.precedencia - b.precedencia);
+                }
+                return prev;
+              });
+            } else if (payload.eventType === 'UPDATE') {
+              const autoridadeAtualizada = dbToAutoridade(payload.new as AutoridadeDB);
+              setAutoridades(prev => {
+                const novaLista = prev.map(a => a.id === autoridadeAtualizada.id ? autoridadeAtualizada : a)
+                    .sort((a, b) => a.precedencia - b.precedencia);
+                
+                // Verificar se houve mudança na limpeza de campos
+                const autoridadeAnterior = prev.find(a => a.id === autoridadeAtualizada.id);
+                if (autoridadeAnterior && !autoridadeAtualizada.presente && autoridadeAnterior.presente) {
+                  // Se a presença foi removida, limpar dispositivo e falas
+                  return novaLista.map(a => 
+                    a.id === autoridadeAtualizada.id 
+                      ? { ...a, incluirDispositivo: false, incluirFalas: false, ordemFala: 0 }
+                      : a
+                  );
+                }
+                
+                if (autoridadeAnterior && !autoridadeAtualizada.incluirDispositivo && autoridadeAnterior.incluirDispositivo) {
+                  // Se o dispositivo foi removido, limpar falas
+                  return novaLista.map(a => 
+                    a.id === autoridadeAtualizada.id 
+                      ? { ...a, incluirFalas: false, ordemFala: 0 }
+                      : a
+                  );
+                }
+                
+                return novaLista;
+              });
+              toast.info(`Autoridade atualizada: ${autoridadeAtualizada.nome}`);
+            } else if (payload.eventType === 'DELETE') {
+              const autoridadeRemovida = payload.old as AutoridadeDB;
+              setAutoridades(prev => prev.filter(a => a.id !== autoridadeRemovida.id));
+              toast.info(`Autoridade removida: ${autoridadeRemovida.nome}`);
+            }
+          }
+        )
+        .subscribe();
+
+      return subscription;
+    };
+
+    if (isLoggedIn && isConnected) {
+      subscription = setupRealtimeSubscription();
+    }
+
+    return () => {
+      if (subscription) {
+        supabase.removeChannel(subscription);
+      }
+    };
+  }, [isLoggedIn, isConnected]);
+
+  // Carregar dados na inicialização
+  useEffect(() => {
+    const carregarDados = async () => {
+      if (isLoggedIn) {
+        await carregarDadosSupabase();
+      }
+    };
+
+    carregarDados();
+  }, [isLoggedIn]);
+
+  // Salvar dados localmente sempre que autoridades mudarem (backup)
   useEffect(() => {
     if (autoridades.length > 0) {
       localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridades));
@@ -252,22 +419,29 @@ export default function CerimonialFacil() {
   }, [autoridades]);
 
   // Função de login
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (loginData.usuario === "Gezuz" && loginData.senha === "Gil080123*") {
       setIsLoggedIn(true);
       setIsAdmin(true);
       setShowLogin(false);
       toast.success("Login administrativo realizado com sucesso!");
+      
+      // Inicializar dados no Supabase se necessário
+      const dadosIniciais = await inicializarDadosSupabase();
+      setAutoridades(dadosIniciais);
+      setIsConnected(true);
     } else if (loginData.usuario === "admin" && loginData.senha === "admin") {
       setIsLoggedIn(true);
       setIsAdmin(false);
       setShowLogin(false);
       toast.success("Login da equipe realizado com sucesso!");
+      await carregarDadosSupabase();
     } else if (loginData.usuario && loginData.senha) {
       setIsLoggedIn(true);
       setIsAdmin(false);
       setShowLogin(false);
       toast.success("Login realizado com sucesso!");
+      await carregarDadosSupabase();
     } else {
       toast.error("Usuário e senha são obrigatórios");
     }
@@ -279,43 +453,119 @@ export default function CerimonialFacil() {
     setShowLogin(true);
     setLoginData({ usuario: "", senha: "" });
     setAbaSelecionada("lista");
+    setIsConnected(false);
     toast.success("Logout realizado com sucesso!");
   };
 
-  // Função para marcar presença (botão PRESENTE -> OK)
-  const marcarPresenca = (id: string) => {
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { ...a, presente: !a.presente } : a
-    ));
+  // Função para marcar presença (botão PRESENTE -> OK) - COM SUPABASE
+  const marcarPresenca = async (id: string) => {
+    const autoridade = autoridades.find(a => a.id === id);
+    if (!autoridade) return;
+
+    const novoEstado = !autoridade.presente;
+    
+    try {
+      // Se removendo presença, limpar dispositivo e falas também
+      const updates: any = { presente: novoEstado };
+      if (!novoEstado) {
+        updates.incluir_dispositivo = false;
+        updates.incluir_falas = false;
+        updates.ordem_fala = 0;
+      }
+      
+      if (isConnected) {
+        await autoridadesService.update(id, updates);
+      }
+      
+      setAutoridades(prev => prev.map(a => 
+        a.id === id ? { 
+          ...a, 
+          presente: novoEstado,
+          incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
+          incluirFalas: novoEstado ? a.incluirFalas : false,
+          ordemFala: novoEstado ? a.ordemFala : 0
+        } : a
+      ));
+      
+      toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
+    } catch (error) {
+      console.error('Erro ao atualizar presença:', error);
+      toast.error("Erro ao atualizar presença no banco");
+      
+      // Atualizar localmente mesmo com erro
+      setAutoridades(prev => prev.map(a => 
+        a.id === id ? { 
+          ...a, 
+          presente: novoEstado,
+          incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
+          incluirFalas: novoEstado ? a.incluirFalas : false,
+          ordemFala: novoEstado ? a.ordemFala : 0
+        } : a
+      ));
+    }
   };
 
-  // Função para incluir no dispositivo - CORRIGIDA para limpar quando desmarcado
-  const incluirDispositivo = (id: string, incluir: boolean) => {
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { 
-        ...a, 
-        incluirDispositivo: incluir, 
-        incluirFalas: incluir ? a.incluirFalas : false // Se desmarcar dispositivo, remove das falas também
-      } : a
-    ));
+  // Função para incluir no dispositivo - COM SUPABASE
+  const incluirDispositivo = async (id: string, incluir: boolean) => {
+    try {
+      const updates = { 
+        incluir_dispositivo: incluir, 
+        incluir_falas: incluir ? autoridades.find(a => a.id === id)?.incluirFalas || false : false,
+        ordem_fala: incluir ? autoridades.find(a => a.id === id)?.ordemFala || 0 : 0
+      };
+      
+      if (isConnected) {
+        await autoridadesService.update(id, updates);
+      }
+      
+      setAutoridades(prev => prev.map(a => 
+        a.id === id ? { 
+          ...a, 
+          incluirDispositivo: incluir, 
+          incluirFalas: incluir ? a.incluirFalas : false,
+          ordemFala: incluir ? a.ordemFala : 0
+        } : a
+      ));
+      
+      toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
+    } catch (error) {
+      console.error('Erro ao atualizar dispositivo:', error);
+      toast.error("Erro ao atualizar no banco");
+    }
   };
 
-  // Função para incluir nas falas
-  const incluirFalas = (id: string, incluir: boolean) => {
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { ...a, incluirFalas: incluir, ordemFala: incluir ? (a.ordemFala || 1) : 0 } : a
-    ));
+  // Função para incluir nas falas - COM SUPABASE
+  const incluirFalas = async (id: string, incluir: boolean) => {
+    try {
+      const ordemFala = incluir ? (autoridades.find(a => a.id === id)?.ordemFala || 1) : 0;
+      
+      if (isConnected) {
+        await autoridadesService.update(id, { 
+          incluir_falas: incluir, 
+          ordem_fala: ordemFala 
+        });
+      }
+      
+      setAutoridades(prev => prev.map(a => 
+        a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
+      ));
+      
+      toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
+    } catch (error) {
+      console.error('Erro ao atualizar falas:', error);
+      toast.error("Erro ao atualizar no banco");
+    }
   };
 
-  // Função para adicionar nova autoridade
-  const adicionarAutoridade = () => {
+  // Função para adicionar nova autoridade - COM SUPABASE
+  const adicionarAutoridade = async () => {
     if (!novaAutoridade.nome || !novaAutoridade.cargo || !novaAutoridade.orgao) {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
 
     const novaAutoridadeCompleta: Autoridade = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       ...novaAutoridade,
       precedencia: autoridades.length + 1,
       presente: false,
@@ -324,13 +574,22 @@ export default function CerimonialFacil() {
       ordemFala: 0
     };
 
-    setAutoridades(prev => [...prev, novaAutoridadeCompleta]);
-    setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
-    setDialogAberto(false);
-    toast.success("Autoridade adicionada com sucesso!");
+    try {
+      if (isConnected) {
+        await autoridadesService.create(autoridadeToDb(novaAutoridadeCompleta));
+      }
+      
+      setAutoridades(prev => [...prev, novaAutoridadeCompleta]);
+      setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
+      setDialogAberto(false);
+      toast.success("Autoridade adicionada com sucesso!");
+    } catch (error) {
+      console.error('Erro ao adicionar autoridade:', error);
+      toast.error("Erro ao salvar no banco");
+    }
   };
 
-  // Função para editar autoridade
+  // Função para editar autoridade - COM SUPABASE
   const editarAutoridade = (autoridade: Autoridade) => {
     setAutoridadeEditando(autoridade);
     setNovaAutoridade({
@@ -342,93 +601,130 @@ export default function CerimonialFacil() {
     setDialogAberto(true);
   };
 
-  const salvarEdicaoAutoridade = () => {
+  const salvarEdicaoAutoridade = async () => {
     if (!autoridadeEditando) return;
 
-    setAutoridades(prev => prev.map(a => 
-      a.id === autoridadeEditando.id 
-        ? { ...a, ...novaAutoridade }
-        : a
-    ));
+    try {
+      if (isConnected) {
+        await autoridadesService.update(autoridadeEditando.id, {
+          nome: novaAutoridade.nome,
+          cargo: novaAutoridade.cargo,
+          orgao: novaAutoridade.orgao,
+          nivel_federativo: novaAutoridade.nivelFederativo
+        });
+      }
+      
+      setAutoridades(prev => prev.map(a => 
+        a.id === autoridadeEditando.id 
+          ? { ...a, ...novaAutoridade }
+          : a
+      ));
 
-    setAutoridadeEditando(null);
-    setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
-    setDialogAberto(false);
-    toast.success("Autoridade atualizada!");
+      setAutoridadeEditando(null);
+      setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
+      setDialogAberto(false);
+      toast.success("Autoridade atualizada!");
+    } catch (error) {
+      console.error('Erro ao editar autoridade:', error);
+      toast.error("Erro ao salvar no banco");
+    }
   };
 
-  // Função para remover autoridade
-  const removerAutoridade = (id: string) => {
-    setAutoridades(prev => prev.filter(a => a.id !== id));
-    toast.success("Autoridade removida!");
+  // Função para remover autoridade - COM SUPABASE
+  const removerAutoridade = async (id: string) => {
+    try {
+      if (isConnected) {
+        await autoridadesService.delete(id);
+      }
+      
+      setAutoridades(prev => prev.filter(a => a.id !== id));
+      toast.success("Autoridade removida!");
+    } catch (error) {
+      console.error('Erro ao remover autoridade:', error);
+      toast.error("Erro ao remover do banco");
+    }
   };
 
-  // Função para simular atualização automática
-  const atualizarDados = () => {
-    toast.success("Dados atualizados das fontes oficiais!");
+  // Função para atualizar dados manualmente
+  const atualizarDados = async () => {
+    await carregarDadosSupabase();
   };
 
-  // Drag and drop para dispositivo - CORRIGIDO
-  const handleDragEndDispositivo = (event: any) => {
+  // Drag and drop para dispositivo - COM SUPABASE
+  const handleDragEndDispositivo = async (event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
     setAutoridades(prev => {
-      // Filtrar apenas autoridades do dispositivo
       const autoridadesDispositivo = prev.filter(a => a.incluirDispositivo);
       const autoridadesOutras = prev.filter(a => !a.incluirDispositivo);
       
-      // Encontrar índices
       const oldIndex = autoridadesDispositivo.findIndex(a => a.id === active.id);
       const newIndex = autoridadesDispositivo.findIndex(a => a.id === over.id);
       
       if (oldIndex === -1 || newIndex === -1) return prev;
       
-      // Reordenar array
       const novaOrdemDispositivo = arrayMove(autoridadesDispositivo, oldIndex, newIndex);
       
-      // Atualizar precedências
       const autoridadesAtualizadas = novaOrdemDispositivo.map((autoridade, index) => ({
         ...autoridade,
         precedencia: index + 1
       }));
       
-      // Combinar com autoridades que não estão no dispositivo
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
+      // Atualizar no Supabase
+      if (isConnected) {
+        const updates = autoridadesAtualizadas.map(autoridade => ({
+          id: autoridade.id,
+          updates: { precedencia: autoridade.precedencia }
+        }));
+        
+        autoridadesService.updateMultiple(updates).catch(error => {
+          console.error('Erro ao atualizar ordem no banco:', error);
+          toast.error("Erro ao salvar nova ordem no banco");
+        });
+      }
       
+      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
       toast.success("Ordem do dispositivo atualizada!");
       return resultado;
     });
   };
 
-  // Drag and drop para falas - CORRIGIDO
-  const handleDragEndFalas = (event: any) => {
+  // Drag and drop para falas - COM SUPABASE
+  const handleDragEndFalas = async (event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
     setAutoridades(prev => {
-      // Filtrar apenas autoridades das falas
       const autoridadesFala = prev.filter(a => a.incluirFalas).sort((a, b) => a.ordemFala - b.ordemFala);
       const autoridadesOutras = prev.filter(a => !a.incluirFalas);
       
-      // Encontrar índices
       const oldIndex = autoridadesFala.findIndex(a => a.id === active.id);
       const newIndex = autoridadesFala.findIndex(a => a.id === over.id);
       
       if (oldIndex === -1 || newIndex === -1) return prev;
       
-      // Reordenar array
       const novaOrdemFala = arrayMove(autoridadesFala, oldIndex, newIndex);
       
-      // Atualizar ordens de fala
       const autoridadesAtualizadas = novaOrdemFala.map((autoridade, index) => ({
         ...autoridade,
         ordemFala: index + 1
       }));
       
-      // Combinar com autoridades que não falam
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
+      // Atualizar no Supabase
+      if (isConnected) {
+        const updates = autoridadesAtualizadas.map(autoridade => ({
+          id: autoridade.id,
+          updates: { ordem_fala: autoridade.ordemFala }
+        }));
+        
+        autoridadesService.updateMultiple(updates).catch(error => {
+          console.error('Erro ao atualizar ordem das falas no banco:', error);
+          toast.error("Erro ao salvar nova ordem das falas no banco");
+        });
+      }
       
+      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
       toast.success("Ordem das falas atualizada!");
       return resultado;
     });
@@ -501,8 +797,8 @@ export default function CerimonialFacil() {
                 </Button>
               </div>
             </div>
-            <Button onClick={handleLogin} className="w-full">
-              Entrar
+            <Button onClick={handleLogin} className="w-full" disabled={isLoading}>
+              {isLoading ? "Carregando..." : "Entrar"}
             </Button>
           </CardContent>
         </Card>
@@ -534,9 +830,14 @@ export default function CerimonialFacil() {
               size="sm"
               onClick={atualizarDados}
               className="text-white hover:bg-white/20"
+              disabled={isLoading}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
+            <Badge variant={isConnected && isOnline ? "default" : "destructive"} className="text-xs">
+              {isConnected && isOnline ? <Wifi className="w-3 h-3 mr-1" /> : <WifiOff className="w-3 h-3 mr-1" />}
+              {isConnected && isOnline ? "Online" : "Offline"}
+            </Badge>
             <Badge variant="secondary" className="text-xs">
               {isAdmin ? "Admin" : "Equipe"}
             </Badge>
