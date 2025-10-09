@@ -289,10 +289,14 @@ export default function CerimonialFacil() {
     ));
   };
 
-  // Função para incluir no dispositivo
+  // Função para incluir no dispositivo - CORRIGIDA para limpar quando desmarcado
   const incluirDispositivo = (id: string, incluir: boolean) => {
     setAutoridades(prev => prev.map(a => 
-      a.id === id ? { ...a, incluirDispositivo: incluir, incluirFalas: incluir ? a.incluirFalas : false } : a
+      a.id === id ? { 
+        ...a, 
+        incluirDispositivo: incluir, 
+        incluirFalas: incluir ? a.incluirFalas : false // Se desmarcar dispositivo, remove das falas também
+      } : a
     ));
   };
 
@@ -437,10 +441,11 @@ export default function CerimonialFacil() {
     autoridade.orgao.toLowerCase().includes(termoBusca.toLowerCase())
   );
 
-  // Dados derivados
+  // Dados derivados - CORRIGIDOS com ordenação adequada
   const autoridadesPresentes = autoridades.filter(a => a.presente).sort((a, b) => a.precedencia - b.precedencia);
   const autoridadesDispositivo = autoridades.filter(a => a.incluirDispositivo).sort((a, b) => a.precedencia - b.precedencia);
-  const autoridadesFala = autoridades.filter(a => a.incluirFalas).sort((a, b) => a.ordemFala - b.ordemFala);
+  // FALAS: ordem inversa (menor precedência para maior - menos autoridade para mais autoridade)
+  const autoridadesFala = autoridades.filter(a => a.incluirFalas).sort((a, b) => b.precedencia - a.precedencia);
 
   // Tela de login
   if (showLogin) {
@@ -854,7 +859,7 @@ export default function CerimonialFacil() {
             </Card>
           </TabsContent>
 
-          {/* ABA 4 - FALAS (COM DRAG AND DROP) */}
+          {/* ABA 4 - FALAS (COM DRAG AND DROP) - ORDEM INVERSA */}
           <TabsContent value="falas" className="space-y-6">
             <Card>
               <CardHeader>
@@ -863,7 +868,7 @@ export default function CerimonialFacil() {
                   Ordem das Falas
                 </CardTitle>
                 <CardDescription>
-                  Ordem das falas (arraste para reordenar) - {autoridadesFala.length} oradores
+                  Ordem das falas - menor para maior autoridade (arraste para reordenar) - {autoridadesFala.length} oradores
                 </CardDescription>
               </CardHeader>
               <CardContent>
