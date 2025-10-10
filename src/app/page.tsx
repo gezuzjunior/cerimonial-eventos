@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,21 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { supabase, autoridadesService, AutoridadeDB } from '@/lib/supabase';
+
+// Importação condicional do Supabase
+let supabase: any = null;
+let autoridadesService: any = null;
+let AutoridadeDB: any = null;
+
+// Tentar importar Supabase apenas se estiver disponível
+try {
+  const supabaseModule = require('@/lib/supabase');
+  supabase = supabaseModule.supabase;
+  autoridadesService = supabaseModule.autoridadesService;
+  AutoridadeDB = supabaseModule.AutoridadeDB;
+} catch (error) {
+  console.warn('Supabase não disponível, usando modo offline:', error);
+}
 
 // Tipos
 interface Autoridade {
@@ -174,8 +188,8 @@ const autoridadesIniciais: Autoridade[] = [
   }
 ];
 
-// Função para converter AutoridadeDB para Autoridade
-const dbToAutoridade = (db: AutoridadeDB): Autoridade => ({
+// Função para converter AutoridadeDB para Autoridade (se Supabase disponível)
+const dbToAutoridade = (db: any): Autoridade => ({
   id: db.id,
   nome: db.nome,
   cargo: db.cargo,
@@ -188,8 +202,8 @@ const dbToAutoridade = (db: AutoridadeDB): Autoridade => ({
   ordemFala: db.ordem_fala
 });
 
-// Função para converter Autoridade para AutoridadeDB
-const autoridadeToDb = (autoridade: Autoridade): Omit<AutoridadeDB, 'created_at' | 'updated_at'> => ({
+// Função para converter Autoridade para AutoridadeDB (se Supabase disponível)
+const autoridadeToDb = (autoridade: Autoridade): any => ({
   id: autoridade.id,
   nome: autoridade.nome,
   cargo: autoridade.cargo,
@@ -241,6 +255,7 @@ export default function CerimonialFacil() {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
   
   // Estados para cadastro
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -255,6 +270,10 @@ export default function CerimonialFacil() {
   // Estado para busca
   const [termoBusca, setTermoBusca] = useState("");
 
+  // Refs para controle de subscription
+  const subscriptionRef = useRef<any>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Sensores para drag and drop
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -263,160 +282,220 @@ export default function CerimonialFacil() {
     })
   );
 
-  // Função para inicializar dados no Supabase
-  const inicializarDadosSupabase = async () => {
-    try {
-      // Verificar se já existem dados
-      const dadosExistentes = await autoridadesService.getAll();
-      
-      if (dadosExistentes.length === 0) {
-        // Inserir dados iniciais
-        const promises = autoridadesIniciais.map(autoridade => 
-          autoridadesService.create(autoridadeToDb(autoridade))
-        );
-        await Promise.all(promises);
-        toast.success("Dados iniciais inseridos no banco!");
-      }
-      
-      return dadosExistentes.length > 0 ? dadosExistentes.map(dbToAutoridade) : autoridadesIniciais;
-    } catch (error) {
-      console.error('Erro ao inicializar dados:', error);
-      toast.error("Erro ao conectar com o banco. Usando dados locais.");
-      return autoridadesIniciais;
-    }
-  };
+  // Função para detectar se está online
+  const checkOnlineStatus = useCallback(() => {
+    setIsOnline(navigator.onLine);
+  }, []);
 
-  // Função para carregar dados do Supabase
-  const carregarDadosSupabase = async () => {
+  // Função para recuperar dados (prioridade: Supabase > localStorage > dados iniciais)
+  const recuperarDados = useCallback(async () => {
+    console.log('🔄 Iniciando recuperação de dados...');
+    
+    // 1. Tentar carregar do Supabase primeiro (se disponível e online)
+    if (autoridadesService && isOnline) {
+      try {
+        console.log('📡 Tentando carregar do Supabase...');
+        const dados = await autoridadesService.getAll();
+        if (dados && dados.length > 0) {
+          const autoridadesConvertidas = dados.map(dbToAutoridade);
+          console.log('✅ Dados carregados do Supabase:', autoridadesConvertidas.length, 'autoridades');
+          setAutoridades(autoridadesConvertidas);
+          setIsConnected(true);
+          setLastSync(new Date());
+          
+          // Salvar backup local
+          localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesConvertidas));
+          localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+          
+          toast.success(`Dados sincronizados! ${autoridadesConvertidas.length} autoridades carregadas.`);
+          return;
+        }
+      } catch (error) {
+        console.warn('⚠️ Erro ao carregar do Supabase:', error);
+        setIsConnected(false);
+      }
+    }
+
+    // 2. Tentar carregar do localStorage
+    const dadosLocais = localStorage.getItem('cerimonial-autoridades');
+    if (dadosLocais) {
+      try {
+        const autoridadesSalvas = JSON.parse(dadosLocais);
+        if (autoridadesSalvas && autoridadesSalvas.length > 0) {
+          console.log('💾 Dados carregados do localStorage:', autoridadesSalvas.length, 'autoridades');
+          setAutoridades(autoridadesSalvas);
+          
+          const lastSyncStr = localStorage.getItem('cerimonial-last-sync');
+          if (lastSyncStr) {
+            setLastSync(new Date(lastSyncStr));
+          }
+          
+          toast.info(`Dados locais carregados! ${autoridadesSalvas.length} autoridades.`);
+          return;
+        }
+      } catch (error) {
+        console.warn('⚠️ Erro ao carregar do localStorage:', error);
+      }
+    }
+
+    // 3. Usar dados iniciais como fallback
+    console.log('🏁 Usando dados iniciais padrão');
+    setAutoridades(autoridadesIniciais);
+    
+    // Salvar dados iniciais no localStorage para próximas sessões
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesIniciais));
+    
+    toast.success(`Lista de autoridades restaurada! ${autoridadesIniciais.length} autoridades carregadas.`);
+  }, [isOnline]);
+
+  // Função para sincronizar dados com debounce
+  const syncWithDatabase = useCallback(async (force = false) => {
+    if (!isLoggedIn || (!isOnline && !force) || !autoridadesService) return;
+
     try {
       setIsLoading(true);
       const dados = await autoridadesService.getAll();
       const autoridadesConvertidas = dados.map(dbToAutoridade);
+      
       setAutoridades(autoridadesConvertidas);
       setIsConnected(true);
-      setIsOnline(true);
-      toast.success("Dados sincronizados com o banco!");
-    } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      setIsConnected(false);
-      setIsOnline(false);
+      setLastSync(new Date());
       
-      // Fallback para dados locais
-      const dadosLocais = localStorage.getItem('cerimonial-autoridades');
-      if (dadosLocais) {
-        try {
-          const autoridadesSalvas = JSON.parse(dadosLocais);
-          setAutoridades(autoridadesSalvas);
-          toast.warning("Usando dados locais - sem conexão com o banco");
-        } catch {
-          setAutoridades(autoridadesIniciais);
-          toast.warning("Usando dados padrão - erro nos dados locais");
-        }
-      } else {
-        setAutoridades(autoridadesIniciais);
-        toast.warning("Usando dados padrão - sem conexão");
+      // Salvar backup local
+      localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesConvertidas));
+      localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+      
+      if (force) {
+        toast.success("Dados sincronizados com sucesso!");
       }
+    } catch (error) {
+      console.error('Erro ao sincronizar:', error);
+      setIsConnected(false);
+      
+      if (force) {
+        toast.error("Erro ao sincronizar. Usando dados locais.");
+      }
+      
+      // Fallback para recuperação de dados
+      await recuperarDados();
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoggedIn, isOnline, recuperarDados]);
 
-  // Configurar subscription para tempo real
-  useEffect(() => {
-    let subscription: any = null;
+  // Configurar subscription para tempo real com reconexão automática
+  const setupRealtimeSubscription = useCallback(() => {
+    if (!supabase || subscriptionRef.current) return;
 
-    const setupRealtimeSubscription = () => {
-      subscription = supabase
-        .channel('autoridades_changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'autoridades'
-          },
-          (payload) => {
-            console.log('Mudança detectada:', payload);
+    subscriptionRef.current = supabase
+      .channel('autoridades_realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'autoridades'
+        },
+        (payload: any) => {
+          console.log('Mudança em tempo real detectada:', payload);
+          
+          setAutoridades(prev => {
+            let novaLista = [...prev];
             
             if (payload.eventType === 'INSERT') {
-              const novaAutoridade = dbToAutoridade(payload.new as AutoridadeDB);
-              setAutoridades(prev => {
-                const existe = prev.find(a => a.id === novaAutoridade.id);
-                if (!existe) {
-                  toast.info(`Nova autoridade adicionada: ${novaAutoridade.nome}`);
-                  return [...prev, novaAutoridade].sort((a, b) => a.precedencia - b.precedencia);
-                }
-                return prev;
-              });
+              const novaAutoridade = dbToAutoridade(payload.new);
+              const existe = novaLista.find(a => a.id === novaAutoridade.id);
+              if (!existe) {
+                novaLista = [...novaLista, novaAutoridade];
+                toast.info(`Nova autoridade: ${novaAutoridade.nome}`);
+              }
             } else if (payload.eventType === 'UPDATE') {
-              const autoridadeAtualizada = dbToAutoridade(payload.new as AutoridadeDB);
-              setAutoridades(prev => {
-                const novaLista = prev.map(a => a.id === autoridadeAtualizada.id ? autoridadeAtualizada : a)
-                    .sort((a, b) => a.precedencia - b.precedencia);
-                
-                // Verificar se houve mudança na limpeza de campos
-                const autoridadeAnterior = prev.find(a => a.id === autoridadeAtualizada.id);
-                if (autoridadeAnterior && !autoridadeAtualizada.presente && autoridadeAnterior.presente) {
-                  // Se a presença foi removida, limpar dispositivo e falas
-                  return novaLista.map(a => 
-                    a.id === autoridadeAtualizada.id 
-                      ? { ...a, incluirDispositivo: false, incluirFalas: false, ordemFala: 0 }
-                      : a
-                  );
-                }
-                
-                if (autoridadeAnterior && !autoridadeAtualizada.incluirDispositivo && autoridadeAnterior.incluirDispositivo) {
-                  // Se o dispositivo foi removido, limpar falas
-                  return novaLista.map(a => 
-                    a.id === autoridadeAtualizada.id 
-                      ? { ...a, incluirFalas: false, ordemFala: 0 }
-                      : a
-                  );
-                }
-                
-                return novaLista;
-              });
-              toast.info(`Autoridade atualizada: ${autoridadeAtualizada.nome}`);
+              const autoridadeAtualizada = dbToAutoridade(payload.new);
+              novaLista = novaLista.map(a => 
+                a.id === autoridadeAtualizada.id ? autoridadeAtualizada : a
+              );
+              toast.info(`Atualizado: ${autoridadeAtualizada.nome}`);
             } else if (payload.eventType === 'DELETE') {
-              const autoridadeRemovida = payload.old as AutoridadeDB;
-              setAutoridades(prev => prev.filter(a => a.id !== autoridadeRemovida.id));
-              toast.info(`Autoridade removida: ${autoridadeRemovida.nome}`);
+              const autoridadeRemovida = payload.old;
+              novaLista = novaLista.filter(a => a.id !== autoridadeRemovida.id);
+              toast.info(`Removido: ${autoridadeRemovida.nome}`);
             }
-          }
-        )
-        .subscribe();
+            
+            // Ordenar por precedência
+            novaLista.sort((a, b) => a.precedencia - b.precedencia);
+            
+            // Salvar backup local
+            localStorage.setItem('cerimonial-autoridades', JSON.stringify(novaLista));
+            setLastSync(new Date());
+            
+            return novaLista;
+          });
+        }
+      )
+      .subscribe((status: string) => {
+        console.log('Status da subscription:', status);
+        if (status === 'SUBSCRIBED') {
+          setIsConnected(true);
+          toast.success("Conectado em tempo real!");
+        } else if (status === 'CHANNEL_ERROR') {
+          setIsConnected(false);
+          toast.error("Erro na conexão em tempo real");
+          
+          // Tentar reconectar após 5 segundos
+          setTimeout(() => {
+            if (isLoggedIn) {
+              setupRealtimeSubscription();
+            }
+          }, 5000);
+        }
+      });
 
-      return subscription;
-    };
-
-    if (isLoggedIn && isConnected) {
-      subscription = setupRealtimeSubscription();
-    }
-
-    return () => {
-      if (subscription) {
-        supabase.removeChannel(subscription);
-      }
-    };
-  }, [isLoggedIn, isConnected]);
-
-  // Carregar dados na inicialização
-  useEffect(() => {
-    const carregarDados = async () => {
-      if (isLoggedIn) {
-        await carregarDadosSupabase();
-      }
-    };
-
-    carregarDados();
+    return subscriptionRef.current;
   }, [isLoggedIn]);
 
-  // Salvar dados localmente sempre que autoridades mudarem (backup)
+  // Efeito para detectar mudanças de conectividade
   useEffect(() => {
-    if (autoridades.length > 0) {
-      localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridades));
+    window.addEventListener('online', checkOnlineStatus);
+    window.addEventListener('offline', checkOnlineStatus);
+    
+    return () => {
+      window.removeEventListener('online', checkOnlineStatus);
+      window.removeEventListener('offline', checkOnlineStatus);
+    };
+  }, [checkOnlineStatus]);
+
+  // Efeito para inicialização - SEMPRE recuperar dados
+  useEffect(() => {
+    recuperarDados();
+  }, [recuperarDados]);
+
+  // Efeito para sincronização automática
+  useEffect(() => {
+    if (isLoggedIn && isOnline && autoridadesService) {
+      // Sincronizar imediatamente
+      syncWithDatabase();
+      
+      // Configurar sincronização periódica (a cada 30 segundos)
+      const interval = setInterval(() => {
+        syncWithDatabase();
+      }, 30000);
+      
+      return () => clearInterval(interval);
     }
-  }, [autoridades]);
+  }, [isLoggedIn, isOnline, syncWithDatabase]);
+
+  // Efeito para configurar subscription em tempo real
+  useEffect(() => {
+    if (isLoggedIn && isConnected && supabase) {
+      const subscription = setupRealtimeSubscription();
+      
+      return () => {
+        if (subscription && supabase) {
+          supabase.removeChannel(subscription);
+        }
+      };
+    }
+  }, [isLoggedIn, isConnected, setupRealtimeSubscription]);
 
   // Função de login
   const handleLogin = async () => {
@@ -424,140 +503,211 @@ export default function CerimonialFacil() {
       setIsLoggedIn(true);
       setIsAdmin(true);
       setShowLogin(false);
-      toast.success("Login administrativo realizado com sucesso!");
-      
-      // Inicializar dados no Supabase se necessário
-      const dadosIniciais = await inicializarDadosSupabase();
-      setAutoridades(dadosIniciais);
-      setIsConnected(true);
+      toast.success("Login administrativo realizado!");
     } else if (loginData.usuario === "admin" && loginData.senha === "admin") {
       setIsLoggedIn(true);
       setIsAdmin(false);
       setShowLogin(false);
-      toast.success("Login da equipe realizado com sucesso!");
-      await carregarDadosSupabase();
+      toast.success("Login da equipe realizado!");
     } else if (loginData.usuario && loginData.senha) {
       setIsLoggedIn(true);
       setIsAdmin(false);
       setShowLogin(false);
-      toast.success("Login realizado com sucesso!");
-      await carregarDadosSupabase();
+      toast.success("Login realizado!");
     } else {
       toast.error("Usuário e senha são obrigatórios");
     }
   };
 
   const handleLogout = () => {
+    // Limpar subscription
+    if (subscriptionRef.current && supabase) {
+      supabase.removeChannel(subscriptionRef.current);
+      subscriptionRef.current = null;
+    }
+    
+    // Limpar timeout
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+    
     setIsLoggedIn(false);
     setIsAdmin(false);
     setShowLogin(true);
     setLoginData({ usuario: "", senha: "" });
     setAbaSelecionada("lista");
     setIsConnected(false);
-    toast.success("Logout realizado com sucesso!");
+    
+    // NÃO limpar autoridades - manter dados locais
+    toast.success("Logout realizado!");
   };
 
-  // Função para marcar presença (botão PRESENTE -> OK) - COM SUPABASE
+  // Função para atualizar no banco com retry
+  const updateWithRetry = async (updateFn: () => Promise<void>, maxRetries = 3) => {
+    if (!autoridadesService) {
+      // Modo offline - apenas atualizar localmente
+      await updateFn();
+      return;
+    }
+
+    let retries = 0;
+    
+    while (retries < maxRetries) {
+      try {
+        await updateFn();
+        return;
+      } catch (error) {
+        retries++;
+        console.error(`Tentativa ${retries} falhou:`, error);
+        
+        if (retries >= maxRetries) {
+          throw error;
+        }
+        
+        // Aguardar antes de tentar novamente
+        await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+      }
+    }
+  };
+
+  // Função para marcar presença com sincronização melhorada
   const marcarPresenca = async (id: string) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
 
     const novoEstado = !autoridade.presente;
     
+    // Atualizar localmente primeiro (optimistic update)
+    setAutoridades(prev => prev.map(a => 
+      a.id === id ? { 
+        ...a, 
+        presente: novoEstado,
+        incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
+        incluirFalas: novoEstado ? a.incluirFalas : false,
+        ordemFala: novoEstado ? a.ordemFala : 0
+      } : a
+    ));
+    
+    // Salvar no localStorage
+    const novasAutoridades = autoridades.map(a => 
+      a.id === id ? { 
+        ...a, 
+        presente: novoEstado,
+        incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
+        incluirFalas: novoEstado ? a.incluirFalas : false,
+        ordemFala: novoEstado ? a.ordemFala : 0
+      } : a
+    );
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    
     try {
-      // Se removendo presença, limpar dispositivo e falas também
-      const updates: any = { presente: novoEstado };
-      if (!novoEstado) {
-        updates.incluir_dispositivo = false;
-        updates.incluir_falas = false;
-        updates.ordem_fala = 0;
+      if (autoridadesService) {
+        const updates: any = { presente: novoEstado };
+        if (!novoEstado) {
+          updates.incluir_dispositivo = false;
+          updates.incluir_falas = false;
+          updates.ordem_fala = 0;
+        }
+        
+        await updateWithRetry(async () => {
+          await autoridadesService.update(id, updates);
+        });
       }
-      
-      if (isConnected) {
-        await autoridadesService.update(id, updates);
-      }
-      
-      setAutoridades(prev => prev.map(a => 
-        a.id === id ? { 
-          ...a, 
-          presente: novoEstado,
-          incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
-          incluirFalas: novoEstado ? a.incluirFalas : false,
-          ordemFala: novoEstado ? a.ordemFala : 0
-        } : a
-      ));
       
       toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
     } catch (error) {
       console.error('Erro ao atualizar presença:', error);
-      toast.error("Erro ao atualizar presença no banco");
+      toast.error("Erro ao sincronizar. Dados salvos localmente.");
       
-      // Atualizar localmente mesmo com erro
+      // Reverter se falhou
       setAutoridades(prev => prev.map(a => 
-        a.id === id ? { 
-          ...a, 
-          presente: novoEstado,
-          incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
-          incluirFalas: novoEstado ? a.incluirFalas : false,
-          ordemFala: novoEstado ? a.ordemFala : 0
-        } : a
+        a.id === id ? autoridade : a
       ));
     }
   };
 
-  // Função para incluir no dispositivo - COM SUPABASE
+  // Função para incluir no dispositivo com sincronização melhorada
   const incluirDispositivo = async (id: string, incluir: boolean) => {
+    const autoridade = autoridades.find(a => a.id === id);
+    if (!autoridade) return;
+    
+    // Atualizar localmente primeiro
+    setAutoridades(prev => prev.map(a => 
+      a.id === id ? { 
+        ...a, 
+        incluirDispositivo: incluir, 
+        incluirFalas: incluir ? a.incluirFalas : false,
+        ordemFala: incluir ? a.ordemFala : 0
+      } : a
+    ));
+    
+    // Salvar no localStorage
+    const novasAutoridades = autoridades.map(a => 
+      a.id === id ? { 
+        ...a, 
+        incluirDispositivo: incluir, 
+        incluirFalas: incluir ? a.incluirFalas : false,
+        ordemFala: incluir ? a.ordemFala : 0
+      } : a
+    );
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    
     try {
-      const updates = { 
-        incluir_dispositivo: incluir, 
-        incluir_falas: incluir ? autoridades.find(a => a.id === id)?.incluirFalas || false : false,
-        ordem_fala: incluir ? autoridades.find(a => a.id === id)?.ordemFala || 0 : 0
-      };
-      
-      if (isConnected) {
-        await autoridadesService.update(id, updates);
+      if (autoridadesService) {
+        const updates = { 
+          incluir_dispositivo: incluir, 
+          incluir_falas: incluir ? autoridade.incluirFalas : false,
+          ordem_fala: incluir ? autoridade.ordemFala : 0
+        };
+        
+        await updateWithRetry(async () => {
+          await autoridadesService.update(id, updates);
+        });
       }
-      
-      setAutoridades(prev => prev.map(a => 
-        a.id === id ? { 
-          ...a, 
-          incluirDispositivo: incluir, 
-          incluirFalas: incluir ? a.incluirFalas : false,
-          ordemFala: incluir ? a.ordemFala : 0
-        } : a
-      ));
       
       toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
     } catch (error) {
       console.error('Erro ao atualizar dispositivo:', error);
-      toast.error("Erro ao atualizar no banco");
+      toast.error("Erro ao sincronizar. Dados salvos localmente.");
     }
   };
 
-  // Função para incluir nas falas - COM SUPABASE
+  // Função para incluir nas falas com sincronização melhorada
   const incluirFalas = async (id: string, incluir: boolean) => {
+    const autoridade = autoridades.find(a => a.id === id);
+    if (!autoridade) return;
+    
+    const ordemFala = incluir ? (autoridade.ordemFala || 1) : 0;
+    
+    // Atualizar localmente primeiro
+    setAutoridades(prev => prev.map(a => 
+      a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
+    ));
+    
+    // Salvar no localStorage
+    const novasAutoridades = autoridades.map(a => 
+      a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
+    );
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    
     try {
-      const ordemFala = incluir ? (autoridades.find(a => a.id === id)?.ordemFala || 1) : 0;
-      
-      if (isConnected) {
-        await autoridadesService.update(id, { 
-          incluir_falas: incluir, 
-          ordem_fala: ordemFala 
+      if (autoridadesService) {
+        await updateWithRetry(async () => {
+          await autoridadesService.update(id, { 
+            incluir_falas: incluir, 
+            ordem_fala: ordemFala 
+          });
         });
       }
-      
-      setAutoridades(prev => prev.map(a => 
-        a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
-      ));
       
       toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
     } catch (error) {
       console.error('Erro ao atualizar falas:', error);
-      toast.error("Erro ao atualizar no banco");
+      toast.error("Erro ao sincronizar. Dados salvos localmente.");
     }
   };
 
-  // Função para adicionar nova autoridade - COM SUPABASE
+  // Função para adicionar nova autoridade
   const adicionarAutoridade = async () => {
     if (!novaAutoridade.nome || !novaAutoridade.cargo || !novaAutoridade.orgao) {
       toast.error("Preencha todos os campos obrigatórios");
@@ -574,22 +724,30 @@ export default function CerimonialFacil() {
       ordemFala: 0
     };
 
+    // Atualizar localmente primeiro
+    setAutoridades(prev => [...prev, novaAutoridadeCompleta]);
+    
+    // Salvar no localStorage
+    const novasAutoridades = [...autoridades, novaAutoridadeCompleta];
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+
     try {
-      if (isConnected) {
-        await autoridadesService.create(autoridadeToDb(novaAutoridadeCompleta));
+      if (autoridadesService) {
+        await updateWithRetry(async () => {
+          await autoridadesService.create(autoridadeToDb(novaAutoridadeCompleta));
+        });
       }
       
-      setAutoridades(prev => [...prev, novaAutoridadeCompleta]);
       setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
       setDialogAberto(false);
-      toast.success("Autoridade adicionada com sucesso!");
+      toast.success("Autoridade adicionada!");
     } catch (error) {
       console.error('Erro ao adicionar autoridade:', error);
-      toast.error("Erro ao salvar no banco");
+      toast.error("Erro ao salvar no banco, mas dados salvos localmente");
     }
   };
 
-  // Função para editar autoridade - COM SUPABASE
+  // Função para editar autoridade
   const editarAutoridade = (autoridade: Autoridade) => {
     setAutoridadeEditando(autoridade);
     setNovaAutoridade({
@@ -604,21 +762,40 @@ export default function CerimonialFacil() {
   const salvarEdicaoAutoridade = async () => {
     if (!autoridadeEditando) return;
 
+    // Atualizar localmente primeiro
+    setAutoridades(prev => prev.map(a => 
+      a.id === autoridadeEditando.id ? {
+        ...a,
+        nome: novaAutoridade.nome,
+        cargo: novaAutoridade.cargo,
+        orgao: novaAutoridade.orgao,
+        nivelFederativo: novaAutoridade.nivelFederativo
+      } : a
+    ));
+    
+    // Salvar no localStorage
+    const novasAutoridades = autoridades.map(a => 
+      a.id === autoridadeEditando.id ? {
+        ...a,
+        nome: novaAutoridade.nome,
+        cargo: novaAutoridade.cargo,
+        orgao: novaAutoridade.orgao,
+        nivelFederativo: novaAutoridade.nivelFederativo
+      } : a
+    );
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+
     try {
-      if (isConnected) {
-        await autoridadesService.update(autoridadeEditando.id, {
-          nome: novaAutoridade.nome,
-          cargo: novaAutoridade.cargo,
-          orgao: novaAutoridade.orgao,
-          nivel_federativo: novaAutoridade.nivelFederativo
+      if (autoridadesService) {
+        await updateWithRetry(async () => {
+          await autoridadesService.update(autoridadeEditando.id, {
+            nome: novaAutoridade.nome,
+            cargo: novaAutoridade.cargo,
+            orgao: novaAutoridade.orgao,
+            nivel_federativo: novaAutoridade.nivelFederativo
+          });
         });
       }
-      
-      setAutoridades(prev => prev.map(a => 
-        a.id === autoridadeEditando.id 
-          ? { ...a, ...novaAutoridade }
-          : a
-      ));
 
       setAutoridadeEditando(null);
       setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
@@ -626,31 +803,43 @@ export default function CerimonialFacil() {
       toast.success("Autoridade atualizada!");
     } catch (error) {
       console.error('Erro ao editar autoridade:', error);
-      toast.error("Erro ao salvar no banco");
+      toast.error("Erro ao salvar no banco, mas dados salvos localmente");
     }
   };
 
-  // Função para remover autoridade - COM SUPABASE
+  // Função para remover autoridade
   const removerAutoridade = async (id: string) => {
+    // Atualizar localmente primeiro
+    setAutoridades(prev => prev.filter(a => a.id !== id));
+    
+    // Salvar no localStorage
+    const novasAutoridades = autoridades.filter(a => a.id !== id);
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+
     try {
-      if (isConnected) {
-        await autoridadesService.delete(id);
+      if (autoridadesService) {
+        await updateWithRetry(async () => {
+          await autoridadesService.delete(id);
+        });
       }
       
-      setAutoridades(prev => prev.filter(a => a.id !== id));
       toast.success("Autoridade removida!");
     } catch (error) {
       console.error('Erro ao remover autoridade:', error);
-      toast.error("Erro ao remover do banco");
+      toast.error("Erro ao remover do banco, mas dados salvos localmente");
     }
   };
 
   // Função para atualizar dados manualmente
   const atualizarDados = async () => {
-    await carregarDadosSupabase();
+    if (autoridadesService && isOnline) {
+      await syncWithDatabase(true);
+    } else {
+      await recuperarDados();
+    }
   };
 
-  // Drag and drop para dispositivo - COM SUPABASE
+  // Drag and drop para dispositivo
   const handleDragEndDispositivo = async (event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -671,26 +860,30 @@ export default function CerimonialFacil() {
         precedencia: index + 1
       }));
       
-      // Atualizar no Supabase
-      if (isConnected) {
+      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
+      
+      // Salvar no localStorage
+      localStorage.setItem('cerimonial-autoridades', JSON.stringify(resultado));
+      
+      // Atualizar no Supabase em background
+      if (autoridadesService) {
         const updates = autoridadesAtualizadas.map(autoridade => ({
           id: autoridade.id,
           updates: { precedencia: autoridade.precedencia }
         }));
         
-        autoridadesService.updateMultiple(updates).catch(error => {
+        autoridadesService.updateMultiple(updates).catch((error: any) => {
           console.error('Erro ao atualizar ordem no banco:', error);
           toast.error("Erro ao salvar nova ordem no banco");
         });
       }
       
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
-      toast.success("Ordem do dispositivo atualizada!");
+      toast.success("Ordem atualizada!");
       return resultado;
     });
   };
 
-  // Drag and drop para falas - COM SUPABASE
+  // Drag and drop para falas
   const handleDragEndFalas = async (event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -711,20 +904,24 @@ export default function CerimonialFacil() {
         ordemFala: index + 1
       }));
       
-      // Atualizar no Supabase
-      if (isConnected) {
+      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
+      
+      // Salvar no localStorage
+      localStorage.setItem('cerimonial-autoridades', JSON.stringify(resultado));
+      
+      // Atualizar no Supabase em background
+      if (autoridadesService) {
         const updates = autoridadesAtualizadas.map(autoridade => ({
           id: autoridade.id,
           updates: { ordem_fala: autoridade.ordemFala }
         }));
         
-        autoridadesService.updateMultiple(updates).catch(error => {
-          console.error('Erro ao atualizar ordem das falas no banco:', error);
+        autoridadesService.updateMultiple(updates).catch((error: any) => {
+          console.error('Erro ao atualizar ordem das falas:', error);
           toast.error("Erro ao salvar nova ordem das falas no banco");
         });
       }
       
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
       toast.success("Ordem das falas atualizada!");
       return resultado;
     });
@@ -838,6 +1035,11 @@ export default function CerimonialFacil() {
               {isConnected && isOnline ? <Wifi className="w-3 h-3 mr-1" /> : <WifiOff className="w-3 h-3 mr-1" />}
               {isConnected && isOnline ? "Online" : "Offline"}
             </Badge>
+            {lastSync && (
+              <Badge variant="outline" className="text-xs text-white border-white/30">
+                {lastSync.toLocaleTimeString()}
+              </Badge>
+            )}
             <Badge variant="secondary" className="text-xs">
               {isAdmin ? "Admin" : "Equipe"}
             </Badge>
