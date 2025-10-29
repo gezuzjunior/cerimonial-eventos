@@ -1,10 +1,5 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    workerThreads: false,
-    cpus: 1
-  },
-  
   typescript: {
     ignoreBuildErrors: false,
   },
@@ -26,26 +21,15 @@ const nextConfig = {
     ],
   },
 
-  env: {
-    CUSTOM_KEY: 'cerimonial-facil',
+  // Configuração otimizada para deploy
+  experimental: {
+    serverComponentsExternalPackages: [],
   },
 
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'X-Frame-Options',
-            value: 'DENY',
-          },
-          {
-            key: 'X-Content-Type-Options',
-            value: 'nosniff',
-          },
-        ],
-      },
-    ];
+  // Configuração de servidor simplificada
+  devIndicators: {
+    buildActivity: true,
+    buildActivityPosition: 'bottom-right',
   },
 };
 

@@ -38,8 +38,14 @@ import {
   Calendar
 } from "lucide-react";
 
-// Importar serviços do Supabase
-import { supabaseService, AutoridadeDB } from "@/lib/supabase";
+// Função para gerar UUID compatível
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 
 // Tipos
 interface Autoridade {
@@ -65,38 +71,10 @@ interface EventoEntregue {
   falas_registradas: Autoridade[];
 }
 
-// Função para converter AutoridadeDB para Autoridade
-const dbParaAutoridade = (autoridadeDB: AutoridadeDB): Autoridade => ({
-  id: autoridadeDB.id,
-  nome: autoridadeDB.nome,
-  cargo: autoridadeDB.cargo,
-  orgao: autoridadeDB.orgao,
-  nivelFederativo: autoridadeDB.nivel_federativo,
-  precedencia: autoridadeDB.precedencia,
-  presente: autoridadeDB.presente,
-  incluirDispositivo: autoridadeDB.incluir_dispositivo,
-  incluirFalas: autoridadeDB.incluir_falas,
-  ordemFala: autoridadeDB.ordem_fala
-});
-
-// Função para converter Autoridade para AutoridadeDB
-const autoridadeParaDB = (autoridade: Autoridade): AutoridadeDB => ({
-  id: autoridade.id,
-  nome: autoridade.nome,
-  cargo: autoridade.cargo,
-  orgao: autoridade.orgao,
-  nivel_federativo: autoridade.nivelFederativo,
-  precedencia: autoridade.precedencia,
-  presente: autoridade.presente,
-  incluir_dispositivo: autoridade.incluirDispositivo,
-  incluir_falas: autoridade.incluirFalas,
-  ordem_fala: autoridade.ordemFala
-});
-
-// Dados das autoridades de Mato Grosso (para inicialização) - com UUIDs válidos
+// Dados das autoridades de Mato Grosso (para inicialização)
 const autoridadesIniciais: Autoridade[] = [
   {
-    id: "550e8400-e29b-41d4-a716-446655440001",
+    id: generateUUID(),
     nome: "Mauro Mendes Ferreira",
     cargo: "Governador do Estado",
     orgao: "Governo do Estado de Mato Grosso",
@@ -108,7 +86,7 @@ const autoridadesIniciais: Autoridade[] = [
     ordemFala: 0
   },
   {
-    id: "550e8400-e29b-41d4-a716-446655440002",
+    id: generateUUID(),
     nome: "Otaviano Olavo Pivetta",
     cargo: "Vice-Governador do Estado",
     orgao: "Governo do Estado de Mato Grosso",
@@ -120,7 +98,7 @@ const autoridadesIniciais: Autoridade[] = [
     ordemFala: 0
   },
   {
-    id: "550e8400-e29b-41d4-a716-446655440003",
+    id: generateUUID(),
     nome: "Eduardo Botelho",
     cargo: "Secretário de Estado de Fazenda",
     orgao: "SEFAZ-MT",
@@ -132,7 +110,7 @@ const autoridadesIniciais: Autoridade[] = [
     ordemFala: 0
   },
   {
-    id: "550e8400-e29b-41d4-a716-446655440004",
+    id: generateUUID(),
     nome: "Gilberto Figueiredo",
     cargo: "Secretário de Estado de Saúde",
     orgao: "SES-MT",
@@ -144,7 +122,7 @@ const autoridadesIniciais: Autoridade[] = [
     ordemFala: 0
   },
   {
-    id: "550e8400-e29b-41d4-a716-446655440005",
+    id: generateUUID(),
     nome: "Alan Resende Porto",
     cargo: "Secretário de Estado de Educação",
     orgao: "SEDUC-MT",
@@ -154,70 +132,10 @@ const autoridadesIniciais: Autoridade[] = [
     incluirDispositivo: false,
     incluirFalas: false,
     ordemFala: 0
-  },
-  {
-    id: "550e8400-e29b-41d4-a716-446655440006",
-    nome: "César Miranda",
-    cargo: "Secretário de Estado de Segurança Pública",
-    orgao: "SESP-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 6,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "550e8400-e29b-41d4-a716-446655440007",
-    nome: "Romero Reis de Souza",
-    cargo: "Secretário de Estado de Infraestrutura e Logística",
-    orgao: "SINFRA-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 7,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "550e8400-e29b-41d4-a716-446655440008",
-    nome: "Basílio Bezerra Neto",
-    cargo: "Secretário de Estado de Desenvolvimento Econômico",
-    orgao: "SEDEC-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 8,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "550e8400-e29b-41d4-a716-446655440009",
-    nome: "Virgílio Mendes",
-    cargo: "Secretário de Estado de Meio Ambiente",
-    orgao: "SEMA-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 9,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
-  },
-  {
-    id: "550e8400-e29b-41d4-a716-446655440010",
-    nome: "Silvano Amaral",
-    cargo: "Secretário de Estado de Agricultura Familiar e Assuntos Fundiários",
-    orgao: "SEAF-MT",
-    nivelFederativo: "Estadual",
-    precedencia: 10,
-    presente: false,
-    incluirDispositivo: false,
-    incluirFalas: false,
-    ordemFala: 0
   }
 ];
 
-// Componente para item arrastável - SIMPLIFICADO para evitar erros de DnD
+// Componente para item arrastável - SIMPLIFICADO
 function SortableItem({ autoridade, children, index }: { autoridade: Autoridade; children: React.ReactNode; index: number }) {
   return (
     <div className="flex items-center gap-3 p-3 bg-white border rounded-lg shadow-sm">
@@ -232,14 +150,14 @@ function SortableItem({ autoridade, children, index }: { autoridade: Autoridade;
 export default function CerimonialFacil() {
   // Estados principais
   const [autoridades, setAutoridades] = useState<Autoridade[]>([]);
-  const [abaSelecionada, setAbaSelecionada] = useState("roteiro"); // ROTEIRO como primeira aba
+  const [abaSelecionada, setAbaSelecionada] = useState("roteiro");
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginData, setLoginData] = useState({ usuario: "", senha: "" });
   const [showLogin, setShowLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(false); // SEMPRE FALSE - MODO OFFLINE
+  const [isConnected, setIsConnected] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   
@@ -276,12 +194,6 @@ export default function CerimonialFacil() {
   const verificarConexaoSupabase = useCallback(async () => {
     console.log('🔌 Modo offline: conexão desabilitada');
     setIsConnected(false);
-    return false;
-  }, []);
-
-  // Função para sincronizar com Supabase - DESABILITADA
-  const sincronizarComSupabase = useCallback(async (autoridadesLocais?: Autoridade[]) => {
-    console.log('💾 Modo offline: sincronização desabilitada');
     return false;
   }, []);
 
@@ -387,7 +299,7 @@ export default function CerimonialFacil() {
     setIsAdmin(false);
     setShowLogin(true);
     setLoginData({ usuario: "", senha: "" });
-    setAbaSelecionada("roteiro"); // Voltar para ROTEIRO
+    setAbaSelecionada("roteiro");
     setIsConnected(false);
     
     toast.success("Logout realizado!");
@@ -405,27 +317,14 @@ export default function CerimonialFacil() {
       
       if (file.type === "text/plain") {
         texto = await file.text();
-      } else if (file.type === "application/pdf") {
-        // Para PDF, vamos usar uma implementação simples
+      } else {
+        // Para outros tipos, implementação básica
         const reader = new FileReader();
         reader.onload = (e) => {
-          const result = e.target?.result as string;
-          // Implementação básica - em produção seria melhor usar pdf-parse
-          texto = "Conteúdo do PDF carregado. Para melhor visualização, edite o texto abaixo.";
+          texto = "Conteúdo do arquivo carregado. Para melhor visualização, edite o texto abaixo.";
           setRoteiroTexto(texto);
         };
         reader.readAsText(file);
-        return;
-      } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-        // Para DOCX, implementação básica
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as ArrayBuffer;
-          // Em produção, usaria mammoth.js para extrair texto
-          texto = "Conteúdo do DOCX carregado. Para melhor visualização, edite o texto abaixo.";
-          setRoteiroTexto(texto);
-        };
-        reader.readAsArrayBuffer(file);
         return;
       }
       
@@ -450,7 +349,7 @@ export default function CerimonialFacil() {
     }
 
     const novoEvento: EventoEntregue = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       nome: nomeEvento,
       data: new Date().toLocaleDateString('pt-BR'),
       roteiro: roteiroTexto,
@@ -489,7 +388,6 @@ export default function CerimonialFacil() {
   // Função para exportar PDF
   const exportarPDF = async (evento: EventoEntregue) => {
     try {
-      // Implementação básica de exportação
       const conteudo = `
 RELATÓRIO DO EVENTO: ${evento.nome}
 Data: ${evento.data}
@@ -525,14 +423,13 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     }
   };
 
-  // Função para marcar presença (apenas localStorage)
+  // Função para marcar presença
   const marcarPresenca = async (id: string) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
 
     const novoEstado = !autoridade.presente;
     
-    // Atualizar localmente
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { 
         ...a, 
@@ -544,8 +441,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     );
     
     setAutoridades(novasAutoridades);
-    
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -553,7 +448,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
   };
 
-  // Função para incluir no dispositivo (apenas localStorage)
+  // Função para incluir no dispositivo
   const incluirDispositivo = async (id: string, incluir: boolean) => {
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { 
@@ -565,8 +460,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     );
     
     setAutoridades(novasAutoridades);
-    
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -574,7 +467,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
   };
 
-  // Função para incluir nas falas (apenas localStorage)
+  // Função para incluir nas falas
   const incluirFalas = async (id: string, incluir: boolean) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
@@ -586,8 +479,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     );
     
     setAutoridades(novasAutoridades);
-
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -595,7 +486,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
   };
 
-  // Função para adicionar nova autoridade (apenas localStorage)
+  // Função para adicionar nova autoridade
   const adicionarAutoridade = async () => {
     if (!novaAutoridade.nome || !novaAutoridade.cargo || !novaAutoridade.orgao) {
       toast.error("Preencha todos os campos obrigatórios");
@@ -603,7 +494,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     }
 
     const novaAutoridadeCompleta: Autoridade = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       ...novaAutoridade,
       precedencia: autoridades.length + 1,
       presente: false,
@@ -614,8 +505,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
 
     const novasAutoridades = [...autoridades, novaAutoridadeCompleta];
     setAutoridades(novasAutoridades);
-    
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -652,8 +541,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     );
     
     setAutoridades(novasAutoridades);
-    
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -665,12 +552,10 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     setDialogAberto(false);
   };
 
-  // Função para remover autoridade (apenas localStorage)
+  // Função para remover autoridade
   const removerAutoridade = async (id: string) => {
     const novasAutoridades = autoridades.filter(a => a.id !== id);
     setAutoridades(novasAutoridades);
-    
-    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
@@ -690,10 +575,9 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     autoridade.orgao.toLowerCase().includes(termoBusca.toLowerCase())
   );
 
-  // Dados derivados - CORRIGIDOS com ordenação adequada
+  // Dados derivados
   const autoridadesPresentes = autoridades.filter(a => a.presente).sort((a, b) => a.precedencia - b.precedencia);
   const autoridadesDispositivo = autoridades.filter(a => a.incluirDispositivo).sort((a, b) => a.precedencia - b.precedencia);
-  // FALAS: ordem inversa (menor precedência para maior - menos autoridade para mais autoridade)
   const autoridadesFala = autoridades.filter(a => a.incluirFalas).sort((a, b) => b.precedencia - a.precedencia);
 
   // Tela de login
@@ -843,7 +727,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </TabsTrigger>
           </TabsList>
 
-          {/* ABA 1 - ROTEIRO (AGORA PRIMEIRA ABA) */}
+          {/* ABA 1 - ROTEIRO */}
           <TabsContent value="roteiro" className="space-y-6">
             <Card>
               <CardHeader>
@@ -856,7 +740,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Nome do Evento */}
                 <div className="space-y-2">
                   <Label htmlFor="nome-evento">Nome do Evento *</Label>
                   <Input
@@ -867,7 +750,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                   />
                 </div>
 
-                {/* Upload de Arquivo */}
                 <div className="space-y-2">
                   <Label>Upload de Roteiro</Label>
                   <div className="flex items-center gap-4">
@@ -893,12 +775,8 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       </Badge>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500">
-                    Formatos aceitos: .docx, .pdf, .txt
-                  </p>
                 </div>
 
-                {/* Área de Texto do Roteiro */}
                 <div className="space-y-2">
                   <Label htmlFor="roteiro-texto">Roteiro do Evento</Label>
                   <Textarea
@@ -910,7 +788,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                   />
                 </div>
 
-                {/* Botão de Finalização */}
                 {roteiroTexto && nomeEvento && (
                   <div className="flex justify-center pt-4">
                     <Button
@@ -991,7 +868,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                             <Label htmlFor="nivel">Nível Federativo *</Label>
                             <Select
                               value={novaAutoridade.nivelFederativo}
-                              onValueChange={(value: any) => setNovaAutoridade(prev => ({ ...prev, nivelFederativo: value }))}
+                              onValueChange={(value: 'Federal' | 'Estadual' | 'Municipal') => setNovaAutoridade(prev => ({ ...prev, nivelFederativo: value }))}
                             >
                               <SelectTrigger>
                                 <SelectValue />
@@ -1025,7 +902,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Campo de Busca */}
                 <div className="mb-4">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -1091,7 +967,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       <div className="text-center py-8 text-gray-500">
                         <Search className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Nenhuma autoridade encontrada para "{termoBusca}"</p>
-                        <p className="text-xs">Tente buscar por nome, cargo ou órgão</p>
                       </div>
                     )}
                   </div>
@@ -1100,7 +975,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 3 - REGISTRO DE PRESENÇA (EM ORDEM DE PRECEDÊNCIA) */}
+          {/* Outras abas continuam igual... */}
           <TabsContent value="presenca" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1143,7 +1018,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       <div className="text-center py-8 text-gray-500">
                         <UserCheck className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Nenhuma autoridade marcada como presente</p>
-                        <p className="text-xs">Vá para "Lista de Autoridades" e marque as presenças</p>
                       </div>
                     )}
                   </div>
@@ -1152,7 +1026,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 4 - DISPOSITIVO (SIMPLIFICADO SEM DRAG AND DROP) */}
           <TabsContent value="dispositivo" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1192,7 +1065,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       <div className="text-center py-8 text-gray-500">
                         <Crown className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Nenhuma autoridade selecionada para o dispositivo</p>
-                        <p className="text-xs">Vá para "Registro de Presença" e marque as autoridades</p>
                       </div>
                     )}
                   </div>
@@ -1201,7 +1073,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 5 - FALAS (SIMPLIFICADO SEM DRAG AND DROP) - ORDEM INVERSA */}
           <TabsContent value="falas" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1235,7 +1106,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       <div className="text-center py-8 text-gray-500">
                         <Mic className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Nenhuma autoridade selecionada para falar</p>
-                        <p className="text-xs">Vá para "Dispositivo" e marque as autoridades que falarão</p>
                       </div>
                     )}
                   </div>
@@ -1244,7 +1114,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 6 - EVENTOS ENTREGUES */}
           <TabsContent value="eventos-entregues" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1304,7 +1173,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       <div className="text-center py-8 text-gray-500">
                         <FolderOpen className="w-12 h-12 mx-auto mb-2 opacity-50" />
                         <p>Nenhum evento finalizado ainda</p>
-                        <p className="text-xs">Finalize um evento na aba "Roteiro" para vê-lo aqui</p>
                       </div>
                     )}
                   </div>
@@ -1312,7 +1180,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
               </CardContent>
             </Card>
 
-            {/* Dialog para visualizar evento */}
             <Dialog open={dialogEventoAberto} onOpenChange={setDialogEventoAberto}>
               <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
@@ -1326,7 +1193,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                 </DialogHeader>
                 {eventoSelecionado && (
                   <div className="space-y-6">
-                    {/* Roteiro */}
                     <div>
                       <h3 className="font-semibold mb-2 flex items-center gap-2">
                         <FileText className="w-4 h-4" />
@@ -1339,7 +1205,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       </div>
                     </div>
 
-                    {/* Histórico de Presença */}
                     <div>
                       <h3 className="font-semibold mb-2 flex items-center gap-2">
                         <UserCheck className="w-4 h-4" />
@@ -1351,49 +1216,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                             <Badge variant="outline" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
                               {index + 1}
                             </Badge>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium">{autoridade.nome}</p>
-                              <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Composição do Dispositivo */}
-                    <div>
-                      <h3 className="font-semibold mb-2 flex items-center gap-2">
-                        <Crown className="w-4 h-4" />
-                        Composição do Dispositivo ({eventoSelecionado.composicao_dispositivo.length})
-                      </h3>
-                      <div className="space-y-2">
-                        {eventoSelecionado.composicao_dispositivo.map((autoridade, index) => (
-                          <div key={autoridade.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                            <Badge variant="default" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
-                              {index + 1}
-                            </Badge>
-                            <div className="flex-1">
-                              <p className="text-sm font-medium">{autoridade.nome}</p>
-                              <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Falas Registradas */}
-                    <div>
-                      <h3 className="font-semibold mb-2 flex items-center gap-2">
-                        <Mic className="w-4 h-4" />
-                        Falas Registradas ({eventoSelecionado.falas_registradas.length})
-                      </h3>
-                      <div className="space-y-2">
-                        {eventoSelecionado.falas_registradas.map((autoridade, index) => (
-                          <div key={autoridade.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-                            <Badge variant="default" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
-                              {index + 1}º
-                            </Badge>
-                            <Mic className="w-4 h-4 text-blue-500" />
                             <div className="flex-1">
                               <p className="text-sm font-medium">{autoridade.nome}</p>
                               <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
