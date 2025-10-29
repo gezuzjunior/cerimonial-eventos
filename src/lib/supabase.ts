@@ -1,186 +1,169 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-// Configuração com fallbacks para evitar erros de build
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Interface para autoridade no banco
+// Tipos para o banco de dados
 export interface AutoridadeDB {
-  id: string;
-  nome: string;
-  cargo: string;
-  orgao: string;
-  nivel_federativo: 'Federal' | 'Estadual' | 'Municipal';
-  precedencia: number;
-  presente: boolean;
-  incluir_dispositivo: boolean;
-  incluir_falas: boolean;
-  ordem_fala: number;
-  created_at?: string;
-  updated_at?: string;
+  id: string
+  nome: string
+  cargo: string
+  orgao: string
+  nivel_federativo: 'Federal' | 'Estadual' | 'Municipal'
+  precedencia: number
+  presente: boolean
+  incluir_dispositivo: boolean
+  incluir_falas: boolean
+  ordem_fala: number
+  created_at?: string
+  updated_at?: string
 }
 
-// Serviço para gerenciar autoridades
-export const autoridadesService = {
+// Funções para interagir com o Supabase
+export const supabaseService = {
   // Buscar todas as autoridades
-  async getAll(): Promise<AutoridadeDB[]> {
+  async buscarAutoridades(): Promise<AutoridadeDB[]> {
     try {
-      // Verificar se as variáveis de ambiente estão configuradas
-      if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-        console.warn('Supabase não configurado, retornando dados vazios');
-        return [];
-      }
-
       const { data, error } = await supabase
         .from('autoridades')
         .select('*')
-        .order('precedencia', { ascending: true });
+        .order('precedencia', { ascending: true })
 
       if (error) {
-        console.error('Erro ao buscar autoridades:', error);
-        return [];
+        console.error('Erro ao buscar autoridades:', error)
+        throw error
       }
 
-      return data || [];
+      return data || []
     } catch (error) {
-      console.error('Erro na conexão com Supabase:', error);
-      return [];
+      console.error('Erro na busca de autoridades:', error)
+      return []
     }
   },
 
-  // Criar nova autoridade
-  async create(autoridade: Omit<AutoridadeDB, 'created_at' | 'updated_at'>): Promise<AutoridadeDB | null> {
+  // Inserir nova autoridade
+  async inserirAutoridade(autoridade: Omit<AutoridadeDB, 'id' | 'created_at' | 'updated_at'>): Promise<AutoridadeDB | null> {
     try {
-      if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-        console.warn('Supabase não configurado');
-        return null;
-      }
-
       const { data, error } = await supabase
         .from('autoridades')
-        .insert([autoridade])
+        .insert([{
+          ...autoridade,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
         .select()
-        .single();
+        .single()
 
       if (error) {
-        console.error('Erro ao criar autoridade:', error);
-        throw error;
+        console.error('Erro ao inserir autoridade:', error)
+        throw error
       }
 
-      return data;
+      return data
     } catch (error) {
-      console.error('Erro na criação:', error);
-      throw error;
+      console.error('Erro na inserção de autoridade:', error)
+      return null
     }
   },
 
   // Atualizar autoridade
-  async update(id: string, updates: Partial<Omit<AutoridadeDB, 'id' | 'created_at' | 'updated_at'>>): Promise<AutoridadeDB | null> {
+  async atualizarAutoridade(id: string, autoridade: Partial<AutoridadeDB>): Promise<AutoridadeDB | null> {
     try {
-      if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-        console.warn('Supabase não configurado');
-        return null;
-      }
-
       const { data, error } = await supabase
         .from('autoridades')
-        .update(updates)
+        .update({
+          ...autoridade,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', id)
         .select()
-        .single();
+        .single()
 
       if (error) {
-        console.error('Erro ao atualizar autoridade:', error);
-        throw error;
+        console.error('Erro ao atualizar autoridade:', error)
+        throw error
       }
 
-      return data;
+      return data
     } catch (error) {
-      console.error('Erro na atualização:', error);
-      throw error;
+      console.error('Erro na atualização de autoridade:', error)
+      return null
     }
   },
 
   // Deletar autoridade
-  async delete(id: string): Promise<boolean> {
+  async deletarAutoridade(id: string): Promise<boolean> {
     try {
-      if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-        console.warn('Supabase não configurado');
-        return false;
-      }
-
       const { error } = await supabase
         .from('autoridades')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
 
       if (error) {
-        console.error('Erro ao deletar autoridade:', error);
-        throw error;
+        console.error('Erro ao deletar autoridade:', error)
+        throw error
       }
 
-      return true;
+      return true
     } catch (error) {
-      console.error('Erro na deleção:', error);
-      throw error;
+      console.error('Erro na deleção de autoridade:', error)
+      return false
     }
   },
 
-  // Atualizar múltiplas autoridades (para reordenação)
-  async updateMultiple(updates: Array<{ id: string; updates: Partial<Omit<AutoridadeDB, 'id' | 'created_at' | 'updated_at'>> }>): Promise<void> {
+  // Sincronizar múltiplas autoridades
+  async sincronizarAutoridades(autoridades: AutoridadeDB[]): Promise<boolean> {
     try {
-      if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-        console.warn('Supabase não configurado');
-        return;
-      }
+      // Primeiro, buscar autoridades existentes
+      const existentes = await this.buscarAutoridades()
+      const idsExistentes = existentes.map(a => a.id)
 
-      // Executar todas as atualizações em paralelo
-      const promises = updates.map(({ id, updates: updateData }) =>
-        supabase
+      // Separar autoridades para inserir e atualizar
+      const paraInserir = autoridades.filter(a => !idsExistentes.includes(a.id))
+      const paraAtualizar = autoridades.filter(a => idsExistentes.includes(a.id))
+
+      // Inserir novas autoridades
+      if (paraInserir.length > 0) {
+        const { error: errorInsert } = await supabase
           .from('autoridades')
-          .update(updateData)
-          .eq('id', id)
-      );
+          .insert(paraInserir.map(a => ({
+            ...a,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })))
 
-      const results = await Promise.allSettled(promises);
-      
-      // Verificar se alguma falhou
-      const failures = results.filter(result => result.status === 'rejected');
-      if (failures.length > 0) {
-        console.error('Algumas atualizações falharam:', failures);
-        throw new Error(`${failures.length} atualizações falharam`);
+        if (errorInsert) {
+          console.error('Erro ao inserir autoridades:', errorInsert)
+          throw errorInsert
+        }
       }
+
+      // Atualizar autoridades existentes
+      for (const autoridade of paraAtualizar) {
+        await this.atualizarAutoridade(autoridade.id, autoridade)
+      }
+
+      return true
     } catch (error) {
-      console.error('Erro nas atualizações múltiplas:', error);
-      throw error;
+      console.error('Erro na sincronização:', error)
+      return false
+    }
+  },
+
+  // Verificar conexão
+  async verificarConexao(): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('autoridades')
+        .select('count')
+        .limit(1)
+
+      return !error
+    } catch (error) {
+      console.error('Erro ao verificar conexão:', error)
+      return false
     }
   }
-};
-
-// Função para inicializar tabela (se necessário)
-export const initializeDatabase = async () => {
-  try {
-    if (supabaseUrl === 'https://placeholder.supabase.co' || supabaseAnonKey === 'placeholder-key') {
-      console.warn('Supabase não configurado, pulando inicialização');
-      return false;
-    }
-
-    // Verificar se a tabela existe tentando fazer uma consulta simples
-    const { error } = await supabase
-      .from('autoridades')
-      .select('id')
-      .limit(1);
-
-    if (error) {
-      console.error('Tabela autoridades não existe ou não está acessível:', error);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Erro ao verificar banco:', error);
-    return false;
-  }
-};
+}

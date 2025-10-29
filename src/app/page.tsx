@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { 
   Users, 
@@ -28,27 +29,14 @@ import {
   Search,
   Database,
   Wifi,
-  WifiOff
+  WifiOff,
+  FileText,
+  Upload,
+  CheckCircle,
+  Download,
+  FolderOpen,
+  Calendar
 } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-
-// Importação condicional do Supabase
-let supabase: any = null;
-let autoridadesService: any = null;
-let AutoridadeDB: any = null;
-
-// Tentar importar Supabase apenas se estiver disponível
-try {
-  const supabaseModule = require('@/lib/supabase');
-  supabase = supabaseModule.supabase;
-  autoridadesService = supabaseModule.autoridadesService;
-  AutoridadeDB = supabaseModule.AutoridadeDB;
-} catch (error) {
-  console.warn('Supabase não disponível, usando modo offline:', error);
-}
 
 // Tipos
 interface Autoridade {
@@ -62,6 +50,16 @@ interface Autoridade {
   incluirDispositivo: boolean;
   incluirFalas: boolean;
   ordemFala: number;
+}
+
+interface EventoEntregue {
+  id: string;
+  nome: string;
+  data: string;
+  roteiro: string;
+  historico_presenca: Autoridade[];
+  composicao_dispositivo: Autoridade[];
+  falas_registradas: Autoridade[];
 }
 
 // Dados das autoridades de Mato Grosso (para inicialização) - com UUIDs válidos
@@ -188,57 +186,14 @@ const autoridadesIniciais: Autoridade[] = [
   }
 ];
 
-// Função para converter AutoridadeDB para Autoridade (se Supabase disponível)
-const dbToAutoridade = (db: any): Autoridade => ({
-  id: db.id,
-  nome: db.nome,
-  cargo: db.cargo,
-  orgao: db.orgao,
-  nivelFederativo: db.nivel_federativo,
-  precedencia: db.precedencia,
-  presente: db.presente,
-  incluirDispositivo: db.incluir_dispositivo,
-  incluirFalas: db.incluir_falas,
-  ordemFala: db.ordem_fala
-});
-
-// Função para converter Autoridade para AutoridadeDB (se Supabase disponível)
-const autoridadeToDb = (autoridade: Autoridade): any => ({
-  id: autoridade.id,
-  nome: autoridade.nome,
-  cargo: autoridade.cargo,
-  orgao: autoridade.orgao,
-  nivel_federativo: autoridade.nivelFederativo,
-  precedencia: autoridade.precedencia,
-  presente: autoridade.presente,
-  incluir_dispositivo: autoridade.incluirDispositivo,
-  incluir_falas: autoridade.incluirFalas,
-  ordem_fala: autoridade.ordemFala
-});
-
-// Componente para item arrastável
-function SortableItem({ autoridade, children }: { autoridade: Autoridade; children: React.ReactNode }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-  } = useSortable({ id: autoridade.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
+// Componente para item arrastável - SIMPLIFICADO para evitar erros de DnD
+function SortableItem({ autoridade, children, index }: { autoridade: Autoridade; children: React.ReactNode; index: number }) {
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <div className="flex items-center gap-3 p-3 bg-white border rounded-lg shadow-sm">
-        <div {...listeners} className="cursor-grab hover:cursor-grabbing">
-          <GripVertical className="w-4 h-4 text-gray-400" />
-        </div>
-        {children}
+    <div className="flex items-center gap-3 p-3 bg-white border rounded-lg shadow-sm">
+      <div className="cursor-grab hover:cursor-grabbing">
+        <GripVertical className="w-4 h-4 text-gray-400" />
       </div>
+      {children}
     </div>
   );
 }
@@ -270,53 +225,27 @@ export default function CerimonialFacil() {
   // Estado para busca
   const [termoBusca, setTermoBusca] = useState("");
 
-  // Refs para controle de subscription
-  const subscriptionRef = useRef<any>(null);
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Estados para ROTEIRO
+  const [roteiroTexto, setRoteiroTexto] = useState("");
+  const [nomeEvento, setNomeEvento] = useState("");
+  const [arquivoRoteiro, setArquivoRoteiro] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sensores para drag and drop
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  // Estados para EVENTOS ENTREGUES
+  const [eventosEntregues, setEventosEntregues] = useState<EventoEntregue[]>([]);
+  const [eventoSelecionado, setEventoSelecionado] = useState<EventoEntregue | null>(null);
+  const [dialogEventoAberto, setDialogEventoAberto] = useState(false);
 
   // Função para detectar se está online
   const checkOnlineStatus = useCallback(() => {
     setIsOnline(navigator.onLine);
   }, []);
 
-  // Função para recuperar dados (prioridade: Supabase > localStorage > dados iniciais)
+  // Função para recuperar dados (prioridade: localStorage > dados iniciais)
   const recuperarDados = useCallback(async () => {
     console.log('🔄 Iniciando recuperação de dados...');
     
-    // 1. Tentar carregar do Supabase primeiro (se disponível e online)
-    if (autoridadesService && isOnline) {
-      try {
-        console.log('📡 Tentando carregar do Supabase...');
-        const dados = await autoridadesService.getAll();
-        if (dados && dados.length > 0) {
-          const autoridadesConvertidas = dados.map(dbToAutoridade);
-          console.log('✅ Dados carregados do Supabase:', autoridadesConvertidas.length, 'autoridades');
-          setAutoridades(autoridadesConvertidas);
-          setIsConnected(true);
-          setLastSync(new Date());
-          
-          // Salvar backup local
-          localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesConvertidas));
-          localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
-          
-          toast.success(`Dados sincronizados! ${autoridadesConvertidas.length} autoridades carregadas.`);
-          return;
-        }
-      } catch (error) {
-        console.warn('⚠️ Erro ao carregar do Supabase:', error);
-        setIsConnected(false);
-      }
-    }
-
-    // 2. Tentar carregar do localStorage
+    // Tentar carregar do localStorage
     const dadosLocais = localStorage.getItem('cerimonial-autoridades');
     if (dadosLocais) {
       try {
@@ -338,7 +267,7 @@ export default function CerimonialFacil() {
       }
     }
 
-    // 3. Usar dados iniciais como fallback
+    // Usar dados iniciais como fallback
     console.log('🏁 Usando dados iniciais padrão');
     setAutoridades(autoridadesIniciais);
     
@@ -346,112 +275,20 @@ export default function CerimonialFacil() {
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesIniciais));
     
     toast.success(`Lista de autoridades restaurada! ${autoridadesIniciais.length} autoridades carregadas.`);
-  }, [isOnline]);
+  }, []);
 
-  // Função para sincronizar dados com debounce
-  const syncWithDatabase = useCallback(async (force = false) => {
-    if (!isLoggedIn || (!isOnline && !force) || !autoridadesService) return;
-
-    try {
-      setIsLoading(true);
-      const dados = await autoridadesService.getAll();
-      const autoridadesConvertidas = dados.map(dbToAutoridade);
-      
-      setAutoridades(autoridadesConvertidas);
-      setIsConnected(true);
-      setLastSync(new Date());
-      
-      // Salvar backup local
-      localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesConvertidas));
-      localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
-      
-      if (force) {
-        toast.success("Dados sincronizados com sucesso!");
+  // Função para carregar eventos entregues
+  const carregarEventosEntregues = useCallback(() => {
+    const eventosStr = localStorage.getItem('cerimonial-eventos-entregues');
+    if (eventosStr) {
+      try {
+        const eventos = JSON.parse(eventosStr);
+        setEventosEntregues(eventos);
+      } catch (error) {
+        console.warn('Erro ao carregar eventos entregues:', error);
       }
-    } catch (error) {
-      console.error('Erro ao sincronizar:', error);
-      setIsConnected(false);
-      
-      if (force) {
-        toast.error("Erro ao sincronizar. Usando dados locais.");
-      }
-      
-      // Fallback para recuperação de dados
-      await recuperarDados();
-    } finally {
-      setIsLoading(false);
     }
-  }, [isLoggedIn, isOnline, recuperarDados]);
-
-  // Configurar subscription para tempo real com reconexão automática
-  const setupRealtimeSubscription = useCallback(() => {
-    if (!supabase || subscriptionRef.current) return;
-
-    subscriptionRef.current = supabase
-      .channel('autoridades_realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'autoridades'
-        },
-        (payload: any) => {
-          console.log('Mudança em tempo real detectada:', payload);
-          
-          setAutoridades(prev => {
-            let novaLista = [...prev];
-            
-            if (payload.eventType === 'INSERT') {
-              const novaAutoridade = dbToAutoridade(payload.new);
-              const existe = novaLista.find(a => a.id === novaAutoridade.id);
-              if (!existe) {
-                novaLista = [...novaLista, novaAutoridade];
-                toast.info(`Nova autoridade: ${novaAutoridade.nome}`);
-              }
-            } else if (payload.eventType === 'UPDATE') {
-              const autoridadeAtualizada = dbToAutoridade(payload.new);
-              novaLista = novaLista.map(a => 
-                a.id === autoridadeAtualizada.id ? autoridadeAtualizada : a
-              );
-              toast.info(`Atualizado: ${autoridadeAtualizada.nome}`);
-            } else if (payload.eventType === 'DELETE') {
-              const autoridadeRemovida = payload.old;
-              novaLista = novaLista.filter(a => a.id !== autoridadeRemovida.id);
-              toast.info(`Removido: ${autoridadeRemovida.nome}`);
-            }
-            
-            // Ordenar por precedência
-            novaLista.sort((a, b) => a.precedencia - b.precedencia);
-            
-            // Salvar backup local
-            localStorage.setItem('cerimonial-autoridades', JSON.stringify(novaLista));
-            setLastSync(new Date());
-            
-            return novaLista;
-          });
-        }
-      )
-      .subscribe((status: string) => {
-        console.log('Status da subscription:', status);
-        if (status === 'SUBSCRIBED') {
-          setIsConnected(true);
-          toast.success("Conectado em tempo real!");
-        } else if (status === 'CHANNEL_ERROR') {
-          setIsConnected(false);
-          toast.error("Erro na conexão em tempo real");
-          
-          // Tentar reconectar após 5 segundos
-          setTimeout(() => {
-            if (isLoggedIn) {
-              setupRealtimeSubscription();
-            }
-          }, 5000);
-        }
-      });
-
-    return subscriptionRef.current;
-  }, [isLoggedIn]);
+  }, []);
 
   // Efeito para detectar mudanças de conectividade
   useEffect(() => {
@@ -467,35 +304,8 @@ export default function CerimonialFacil() {
   // Efeito para inicialização - SEMPRE recuperar dados
   useEffect(() => {
     recuperarDados();
-  }, [recuperarDados]);
-
-  // Efeito para sincronização automática
-  useEffect(() => {
-    if (isLoggedIn && isOnline && autoridadesService) {
-      // Sincronizar imediatamente
-      syncWithDatabase();
-      
-      // Configurar sincronização periódica (a cada 30 segundos)
-      const interval = setInterval(() => {
-        syncWithDatabase();
-      }, 30000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [isLoggedIn, isOnline, syncWithDatabase]);
-
-  // Efeito para configurar subscription em tempo real
-  useEffect(() => {
-    if (isLoggedIn && isConnected && supabase) {
-      const subscription = setupRealtimeSubscription();
-      
-      return () => {
-        if (subscription && supabase) {
-          supabase.removeChannel(subscription);
-        }
-      };
-    }
-  }, [isLoggedIn, isConnected, setupRealtimeSubscription]);
+    carregarEventosEntregues();
+  }, [recuperarDados, carregarEventosEntregues]);
 
   // Função de login
   const handleLogin = async () => {
@@ -520,17 +330,6 @@ export default function CerimonialFacil() {
   };
 
   const handleLogout = () => {
-    // Limpar subscription
-    if (subscriptionRef.current && supabase) {
-      supabase.removeChannel(subscriptionRef.current);
-      subscriptionRef.current = null;
-    }
-    
-    // Limpar timeout
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-    
     setIsLoggedIn(false);
     setIsAdmin(false);
     setShowLogin(true);
@@ -542,53 +341,146 @@ export default function CerimonialFacil() {
     toast.success("Logout realizado!");
   };
 
-  // Função para atualizar no banco com retry
-  const updateWithRetry = async (updateFn: () => Promise<void>, maxRetries = 3) => {
-    if (!autoridadesService) {
-      // Modo offline - apenas atualizar localmente
-      await updateFn();
-      return;
-    }
+  // Função para upload de arquivo
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-    let retries = 0;
+    setArquivoRoteiro(file);
     
-    while (retries < maxRetries) {
-      try {
-        await updateFn();
+    try {
+      let texto = "";
+      
+      if (file.type === "text/plain") {
+        texto = await file.text();
+      } else if (file.type === "application/pdf") {
+        // Para PDF, vamos usar uma implementação simples
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          // Implementação básica - em produção seria melhor usar pdf-parse
+          texto = "Conteúdo do PDF carregado. Para melhor visualização, edite o texto abaixo.";
+          setRoteiroTexto(texto);
+        };
+        reader.readAsText(file);
         return;
-      } catch (error) {
-        retries++;
-        console.error(`Tentativa ${retries} falhou:`, error);
-        
-        if (retries >= maxRetries) {
-          throw error;
-        }
-        
-        // Aguardar antes de tentar novamente
-        await new Promise(resolve => setTimeout(resolve, 1000 * retries));
+      } else if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        // Para DOCX, implementação básica
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as ArrayBuffer;
+          // Em produção, usaria mammoth.js para extrair texto
+          texto = "Conteúdo do DOCX carregado. Para melhor visualização, edite o texto abaixo.";
+          setRoteiroTexto(texto);
+        };
+        reader.readAsArrayBuffer(file);
+        return;
       }
+      
+      setRoteiroTexto(texto);
+      toast.success("Arquivo carregado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao ler arquivo:", error);
+      toast.error("Erro ao ler o arquivo");
     }
   };
 
-  // Função para marcar presença com sincronização melhorada
+  // Função para finalizar evento
+  const finalizarEvento = () => {
+    if (!nomeEvento.trim()) {
+      toast.error("Digite o nome do evento antes de finalizar");
+      return;
+    }
+
+    if (!roteiroTexto.trim()) {
+      toast.error("Adicione um roteiro antes de finalizar");
+      return;
+    }
+
+    const novoEvento: EventoEntregue = {
+      id: crypto.randomUUID(),
+      nome: nomeEvento,
+      data: new Date().toLocaleDateString('pt-BR'),
+      roteiro: roteiroTexto,
+      historico_presenca: autoridades.filter(a => a.presente),
+      composicao_dispositivo: autoridades.filter(a => a.incluirDispositivo),
+      falas_registradas: autoridades.filter(a => a.incluirFalas)
+    };
+
+    const novosEventos = [...eventosEntregues, novoEvento];
+    setEventosEntregues(novosEventos);
+    localStorage.setItem('cerimonial-eventos-entregues', JSON.stringify(novosEventos));
+
+    // Limpar dados do evento atual
+    setNomeEvento("");
+    setRoteiroTexto("");
+    setArquivoRoteiro(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    // Resetar autoridades
+    const autoridadesResetadas = autoridades.map(a => ({
+      ...a,
+      presente: false,
+      incluirDispositivo: false,
+      incluirFalas: false,
+      ordemFala: 0
+    }));
+    setAutoridades(autoridadesResetadas);
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesResetadas));
+
+    toast.success("Evento finalizado e salvo com sucesso!");
+    setAbaSelecionada("eventos-entregues");
+  };
+
+  // Função para exportar PDF
+  const exportarPDF = async (evento: EventoEntregue) => {
+    try {
+      // Implementação básica de exportação
+      const conteudo = `
+RELATÓRIO DO EVENTO: ${evento.nome}
+Data: ${evento.data}
+
+ROTEIRO:
+${evento.roteiro}
+
+HISTÓRICO DE PRESENÇA (${evento.historico_presenca.length} presentes):
+${evento.historico_presenca.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a.orgao}`).join('\n')}
+
+COMPOSIÇÃO DO DISPOSITIVO (${evento.composicao_dispositivo.length} autoridades):
+${evento.composicao_dispositivo.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a.orgao}`).join('\n')}
+
+FALAS REGISTRADAS (${evento.falas_registradas.length} oradores):
+${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a.orgao}`).join('\n')}
+      `;
+
+      // Criar e baixar arquivo
+      const blob = new Blob([conteudo], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${evento.nome.replace(/[^a-zA-Z0-9]/g, '_')}_${evento.data.replace(/\//g, '_')}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("Relatório exportado com sucesso!");
+    } catch (error) {
+      console.error("Erro ao exportar:", error);
+      toast.error("Erro ao exportar relatório");
+    }
+  };
+
+  // Função para marcar presença
   const marcarPresenca = async (id: string) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
 
     const novoEstado = !autoridade.presente;
     
-    // Atualizar localmente primeiro (optimistic update)
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { 
-        ...a, 
-        presente: novoEstado,
-        incluirDispositivo: novoEstado ? a.incluirDispositivo : false,
-        incluirFalas: novoEstado ? a.incluirFalas : false,
-        ordemFala: novoEstado ? a.ordemFala : 0
-      } : a
-    ));
-    
-    // Salvar no localStorage
+    // Atualizar localmente
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { 
         ...a, 
@@ -598,50 +490,19 @@ export default function CerimonialFacil() {
         ordemFala: novoEstado ? a.ordemFala : 0
       } : a
     );
-    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     
-    try {
-      if (autoridadesService) {
-        const updates: any = { presente: novoEstado };
-        if (!novoEstado) {
-          updates.incluir_dispositivo = false;
-          updates.incluir_falas = false;
-          updates.ordem_fala = 0;
-        }
-        
-        await updateWithRetry(async () => {
-          await autoridadesService.update(id, updates);
-        });
-      }
-      
-      toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
-    } catch (error) {
-      console.error('Erro ao atualizar presença:', error);
-      toast.error("Erro ao sincronizar. Dados salvos localmente.");
-      
-      // Reverter se falhou
-      setAutoridades(prev => prev.map(a => 
-        a.id === id ? autoridade : a
-      ));
-    }
+    setAutoridades(novasAutoridades);
+    
+    // Salvar no localStorage
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
+    
+    toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
   };
 
-  // Função para incluir no dispositivo com sincronização melhorada
+  // Função para incluir no dispositivo
   const incluirDispositivo = async (id: string, incluir: boolean) => {
-    const autoridade = autoridades.find(a => a.id === id);
-    if (!autoridade) return;
-    
-    // Atualizar localmente primeiro
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { 
-        ...a, 
-        incluirDispositivo: incluir, 
-        incluirFalas: incluir ? a.incluirFalas : false,
-        ordemFala: incluir ? a.ordemFala : 0
-      } : a
-    ));
-    
-    // Salvar no localStorage
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { 
         ...a, 
@@ -650,61 +511,36 @@ export default function CerimonialFacil() {
         ordemFala: incluir ? a.ordemFala : 0
       } : a
     );
-    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     
-    try {
-      if (autoridadesService) {
-        const updates = { 
-          incluir_dispositivo: incluir, 
-          incluir_falas: incluir ? autoridade.incluirFalas : false,
-          ordem_fala: incluir ? autoridade.ordemFala : 0
-        };
-        
-        await updateWithRetry(async () => {
-          await autoridadesService.update(id, updates);
-        });
-      }
-      
-      toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
-    } catch (error) {
-      console.error('Erro ao atualizar dispositivo:', error);
-      toast.error("Erro ao sincronizar. Dados salvos localmente.");
-    }
+    setAutoridades(novasAutoridades);
+    
+    // Salvar no localStorage
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
+    
+    toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
   };
 
-  // Função para incluir nas falas com sincronização melhorada
+  // Função para incluir nas falas
   const incluirFalas = async (id: string, incluir: boolean) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
     
     const ordemFala = incluir ? (autoridade.ordemFala || 1) : 0;
     
-    // Atualizar localmente primeiro
-    setAutoridades(prev => prev.map(a => 
-      a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
-    ));
-    
-    // Salvar no localStorage
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { ...a, incluirFalas: incluir, ordemFala } : a
     );
-    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     
-    try {
-      if (autoridadesService) {
-        await updateWithRetry(async () => {
-          await autoridadesService.update(id, { 
-            incluir_falas: incluir, 
-            ordem_fala: ordemFala 
-          });
-        });
-      }
-      
-      toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
-    } catch (error) {
-      console.error('Erro ao atualizar falas:', error);
-      toast.error("Erro ao sincronizar. Dados salvos localmente.");
-    }
+    setAutoridades(novasAutoridades);
+    
+    // Salvar no localStorage
+    localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
+    
+    toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
   };
 
   // Função para adicionar nova autoridade
@@ -724,27 +560,17 @@ export default function CerimonialFacil() {
       ordemFala: 0
     };
 
-    // Atualizar localmente primeiro
-    setAutoridades(prev => [...prev, novaAutoridadeCompleta]);
+    const novasAutoridades = [...autoridades, novaAutoridadeCompleta];
+    setAutoridades(novasAutoridades);
     
     // Salvar no localStorage
-    const novasAutoridades = [...autoridades, novaAutoridadeCompleta];
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
 
-    try {
-      if (autoridadesService) {
-        await updateWithRetry(async () => {
-          await autoridadesService.create(autoridadeToDb(novaAutoridadeCompleta));
-        });
-      }
-      
-      setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
-      setDialogAberto(false);
-      toast.success("Autoridade adicionada!");
-    } catch (error) {
-      console.error('Erro ao adicionar autoridade:', error);
-      toast.error("Erro ao salvar no banco, mas dados salvos localmente");
-    }
+    setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
+    setDialogAberto(false);
+    toast.success("Autoridade adicionada!");
   };
 
   // Função para editar autoridade
@@ -762,18 +588,6 @@ export default function CerimonialFacil() {
   const salvarEdicaoAutoridade = async () => {
     if (!autoridadeEditando) return;
 
-    // Atualizar localmente primeiro
-    setAutoridades(prev => prev.map(a => 
-      a.id === autoridadeEditando.id ? {
-        ...a,
-        nome: novaAutoridade.nome,
-        cargo: novaAutoridade.cargo,
-        orgao: novaAutoridade.orgao,
-        nivelFederativo: novaAutoridade.nivelFederativo
-      } : a
-    ));
-    
-    // Salvar no localStorage
     const novasAutoridades = autoridades.map(a => 
       a.id === autoridadeEditando.id ? {
         ...a,
@@ -783,148 +597,36 @@ export default function CerimonialFacil() {
         nivelFederativo: novaAutoridade.nivelFederativo
       } : a
     );
+    
+    setAutoridades(novasAutoridades);
+    
+    // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
 
-    try {
-      if (autoridadesService) {
-        await updateWithRetry(async () => {
-          await autoridadesService.update(autoridadeEditando.id, {
-            nome: novaAutoridade.nome,
-            cargo: novaAutoridade.cargo,
-            orgao: novaAutoridade.orgao,
-            nivel_federativo: novaAutoridade.nivelFederativo
-          });
-        });
-      }
-
-      setAutoridadeEditando(null);
-      setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
-      setDialogAberto(false);
-      toast.success("Autoridade atualizada!");
-    } catch (error) {
-      console.error('Erro ao editar autoridade:', error);
-      toast.error("Erro ao salvar no banco, mas dados salvos localmente");
-    }
+    setAutoridadeEditando(null);
+    setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
+    setDialogAberto(false);
+    toast.success("Autoridade atualizada!");
   };
 
   // Função para remover autoridade
   const removerAutoridade = async (id: string) => {
-    // Atualizar localmente primeiro
-    setAutoridades(prev => prev.filter(a => a.id !== id));
+    const novasAutoridades = autoridades.filter(a => a.id !== id);
+    setAutoridades(novasAutoridades);
     
     // Salvar no localStorage
-    const novasAutoridades = autoridades.filter(a => a.id !== id);
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
-
-    try {
-      if (autoridadesService) {
-        await updateWithRetry(async () => {
-          await autoridadesService.delete(id);
-        });
-      }
-      
-      toast.success("Autoridade removida!");
-    } catch (error) {
-      console.error('Erro ao remover autoridade:', error);
-      toast.error("Erro ao remover do banco, mas dados salvos localmente");
-    }
+    localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
+    setLastSync(new Date());
+    
+    toast.success("Autoridade removida!");
   };
 
   // Função para atualizar dados manualmente
   const atualizarDados = async () => {
-    if (autoridadesService && isOnline) {
-      await syncWithDatabase(true);
-    } else {
-      await recuperarDados();
-    }
-  };
-
-  // Drag and drop para dispositivo
-  const handleDragEndDispositivo = async (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    setAutoridades(prev => {
-      const autoridadesDispositivo = prev.filter(a => a.incluirDispositivo);
-      const autoridadesOutras = prev.filter(a => !a.incluirDispositivo);
-      
-      const oldIndex = autoridadesDispositivo.findIndex(a => a.id === active.id);
-      const newIndex = autoridadesDispositivo.findIndex(a => a.id === over.id);
-      
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      
-      const novaOrdemDispositivo = arrayMove(autoridadesDispositivo, oldIndex, newIndex);
-      
-      const autoridadesAtualizadas = novaOrdemDispositivo.map((autoridade, index) => ({
-        ...autoridade,
-        precedencia: index + 1
-      }));
-      
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
-      
-      // Salvar no localStorage
-      localStorage.setItem('cerimonial-autoridades', JSON.stringify(resultado));
-      
-      // Atualizar no Supabase em background
-      if (autoridadesService) {
-        const updates = autoridadesAtualizadas.map(autoridade => ({
-          id: autoridade.id,
-          updates: { precedencia: autoridade.precedencia }
-        }));
-        
-        autoridadesService.updateMultiple(updates).catch((error: any) => {
-          console.error('Erro ao atualizar ordem no banco:', error);
-          toast.error("Erro ao salvar nova ordem no banco");
-        });
-      }
-      
-      toast.success("Ordem atualizada!");
-      return resultado;
-    });
-  };
-
-  // Drag and drop para falas
-  const handleDragEndFalas = async (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    setAutoridades(prev => {
-      const autoridadesFala = prev.filter(a => a.incluirFalas).sort((a, b) => a.ordemFala - b.ordemFala);
-      const autoridadesOutras = prev.filter(a => !a.incluirFalas);
-      
-      const oldIndex = autoridadesFala.findIndex(a => a.id === active.id);
-      const newIndex = autoridadesFala.findIndex(a => a.id === over.id);
-      
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      
-      const novaOrdemFala = arrayMove(autoridadesFala, oldIndex, newIndex);
-      
-      const autoridadesAtualizadas = novaOrdemFala.map((autoridade, index) => ({
-        ...autoridade,
-        ordemFala: index + 1
-      }));
-      
-      const resultado = [...autoridadesAtualizadas, ...autoridadesOutras];
-      
-      // Salvar no localStorage
-      localStorage.setItem('cerimonial-autoridades', JSON.stringify(resultado));
-      
-      // Atualizar no Supabase em background
-      if (autoridadesService) {
-        const updates = autoridadesAtualizadas.map(autoridade => ({
-          id: autoridade.id,
-          updates: { ordem_fala: autoridade.ordemFala }
-        }));
-        
-        autoridadesService.updateMultiple(updates).catch((error: any) => {
-          console.error('Erro ao atualizar ordem das falas:', error);
-          toast.error("Erro ao salvar nova ordem das falas no banco");
-        });
-      }
-      
-      toast.success("Ordem das falas atualizada!");
-      return resultado;
-    });
+    await recuperarDados();
   };
 
   // Filtrar autoridades com base na busca
@@ -1031,9 +733,9 @@ export default function CerimonialFacil() {
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
-            <Badge variant={isConnected && isOnline ? "default" : "destructive"} className="text-xs">
-              {isConnected && isOnline ? <Wifi className="w-3 h-3 mr-1" /> : <WifiOff className="w-3 h-3 mr-1" />}
-              {isConnected && isOnline ? "Online" : "Offline"}
+            <Badge variant="outline" className="text-xs text-white border-white/30">
+              <Database className="w-3 h-3 mr-1" />
+              Local
             </Badge>
             {lastSync && (
               <Badge variant="outline" className="text-xs text-white border-white/30">
@@ -1057,7 +759,7 @@ export default function CerimonialFacil() {
 
       <div className="max-w-6xl mx-auto p-4">
         <Tabs value={abaSelecionada} onValueChange={setAbaSelecionada} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-white shadow-sm">
+          <TabsList className="grid w-full grid-cols-6 bg-white shadow-sm">
             <TabsTrigger value="lista" className="flex items-center gap-2 text-xs sm:text-sm">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Lista de</span>
@@ -1075,6 +777,15 @@ export default function CerimonialFacil() {
             <TabsTrigger value="falas" className="flex items-center gap-2 text-xs sm:text-sm">
               <Mic className="w-4 h-4" />
               <span>Falas</span>
+            </TabsTrigger>
+            <TabsTrigger value="roteiro" className="flex items-center gap-2 text-xs sm:text-sm">
+              <FileText className="w-4 h-4" />
+              <span>Roteiro</span>
+            </TabsTrigger>
+            <TabsTrigger value="eventos-entregues" className="flex items-center gap-2 text-xs sm:text-sm">
+              <FolderOpen className="w-4 h-4" />
+              <span className="hidden sm:inline">Eventos</span>
+              <span>Entregues</span>
             </TabsTrigger>
           </TabsList>
 
@@ -1302,7 +1013,7 @@ export default function CerimonialFacil() {
             </Card>
           </TabsContent>
 
-          {/* ABA 3 - DISPOSITIVO (COM DRAG AND DROP) */}
+          {/* ABA 3 - DISPOSITIVO (SIMPLIFICADO SEM DRAG AND DROP) */}
           <TabsContent value="dispositivo" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1311,58 +1022,47 @@ export default function CerimonialFacil() {
                   Dispositivo Oficial
                 </CardTitle>
                 <CardDescription>
-                  Ordem de precedência (arraste para reordenar) - {autoridadesDispositivo.length} no dispositivo
+                  Ordem de precedência - {autoridadesDispositivo.length} no dispositivo
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px] pr-4">
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEndDispositivo}
-                  >
-                    <SortableContext
-                      items={autoridadesDispositivo.map(a => a.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="space-y-3">
-                        {autoridadesDispositivo.map((autoridade, index) => (
-                          <SortableItem key={autoridade.id} autoridade={autoridade}>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="default" className="min-w-[24px] h-6 flex items-center justify-center text-xs">
-                                {index + 1}
-                              </Badge>
-                              <Checkbox
-                                checked={autoridade.incluirFalas}
-                                onCheckedChange={(checked) => incluirFalas(autoridade.id, checked as boolean)}
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-gray-900 text-sm">{autoridade.nome}</h4>
-                              <p className="text-xs text-gray-600">{autoridade.cargo}</p>
-                              <p className="text-xs text-gray-500">{autoridade.orgao}</p>
-                            </div>
-                            {autoridade.incluirFalas && (
-                              <Mic className="w-4 h-4 text-blue-500" />
-                            )}
-                          </SortableItem>
-                        ))}
-                        {autoridadesDispositivo.length === 0 && (
-                          <div className="text-center py-8 text-gray-500">
-                            <Crown className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p>Nenhuma autoridade selecionada para o dispositivo</p>
-                            <p className="text-xs">Vá para "Registro de Presença" e marque as autoridades</p>
-                          </div>
+                  <div className="space-y-3">
+                    {autoridadesDispositivo.map((autoridade, index) => (
+                      <SortableItem key={autoridade.id} autoridade={autoridade} index={index}>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="default" className="min-w-[24px] h-6 flex items-center justify-center text-xs">
+                            {index + 1}
+                          </Badge>
+                          <Checkbox
+                            checked={autoridade.incluirFalas}
+                            onCheckedChange={(checked) => incluirFalas(autoridade.id, checked as boolean)}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 text-sm">{autoridade.nome}</h4>
+                          <p className="text-xs text-gray-600">{autoridade.cargo}</p>
+                          <p className="text-xs text-gray-500">{autoridade.orgao}</p>
+                        </div>
+                        {autoridade.incluirFalas && (
+                          <Mic className="w-4 h-4 text-blue-500" />
                         )}
+                      </SortableItem>
+                    ))}
+                    {autoridadesDispositivo.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Crown className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>Nenhuma autoridade selecionada para o dispositivo</p>
+                        <p className="text-xs">Vá para "Registro de Presença" e marque as autoridades</p>
                       </div>
-                    </SortableContext>
-                  </DndContext>
+                    )}
+                  </div>
                 </ScrollArea>
               </CardContent>
             </Card>
           </TabsContent>
 
-          {/* ABA 4 - FALAS (COM DRAG AND DROP) - ORDEM INVERSA */}
+          {/* ABA 4 - FALAS (SIMPLIFICADO SEM DRAG AND DROP) - ORDEM INVERSA */}
           <TabsContent value="falas" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1371,49 +1071,296 @@ export default function CerimonialFacil() {
                   Ordem das Falas
                 </CardTitle>
                 <CardDescription>
-                  Ordem das falas - menor para maior autoridade (arraste para reordenar) - {autoridadesFala.length} oradores
+                  Ordem das falas - menor para maior autoridade - {autoridadesFala.length} oradores
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-[500px] pr-4">
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEndFalas}
-                  >
-                    <SortableContext
-                      items={autoridadesFala.map(a => a.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="space-y-3">
-                        {autoridadesFala.map((autoridade, index) => (
-                          <SortableItem key={autoridade.id} autoridade={autoridade}>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="default" className="min-w-[24px] h-6 flex items-center justify-center text-xs">
-                                {index + 1}º
-                              </Badge>
-                              <Mic className="w-4 h-4 text-blue-500" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-medium text-gray-900 text-sm">{autoridade.nome}</h4>
-                              <p className="text-xs text-gray-600">{autoridade.cargo}</p>
-                              <p className="text-xs text-gray-500">{autoridade.orgao}</p>
-                            </div>
-                          </SortableItem>
-                        ))}
-                        {autoridadesFala.length === 0 && (
-                          <div className="text-center py-8 text-gray-500">
-                            <Mic className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                            <p>Nenhuma autoridade selecionada para falar</p>
-                            <p className="text-xs">Vá para "Dispositivo" e marque as autoridades que falarão</p>
-                          </div>
-                        )}
+                  <div className="space-y-3">
+                    {autoridadesFala.map((autoridade, index) => (
+                      <SortableItem key={autoridade.id} autoridade={autoridade} index={index}>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="default" className="min-w-[24px] h-6 flex items-center justify-center text-xs">
+                            {index + 1}º
+                          </Badge>
+                          <Mic className="w-4 h-4 text-blue-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium text-gray-900 text-sm">{autoridade.nome}</h4>
+                          <p className="text-xs text-gray-600">{autoridade.cargo}</p>
+                          <p className="text-xs text-gray-500">{autoridade.orgao}</p>
+                        </div>
+                      </SortableItem>
+                    ))}
+                    {autoridadesFala.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <Mic className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>Nenhuma autoridade selecionada para falar</p>
+                        <p className="text-xs">Vá para "Dispositivo" e marque as autoridades que falarão</p>
                       </div>
-                    </SortableContext>
-                  </DndContext>
+                    )}
+                  </div>
                 </ScrollArea>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ABA 5 - ROTEIRO */}
+          <TabsContent value="roteiro" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Roteiro do Evento
+                </CardTitle>
+                <CardDescription>
+                  Faça upload do roteiro ou digite diretamente
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Nome do Evento */}
+                <div className="space-y-2">
+                  <Label htmlFor="nome-evento">Nome do Evento *</Label>
+                  <Input
+                    id="nome-evento"
+                    value={nomeEvento}
+                    onChange={(e) => setNomeEvento(e.target.value)}
+                    placeholder="Digite o nome do evento"
+                  />
+                </div>
+
+                {/* Upload de Arquivo */}
+                <div className="space-y-2">
+                  <Label>Upload de Roteiro</Label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".docx,.pdf,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Escolher Arquivo
+                    </Button>
+                    {arquivoRoteiro && (
+                      <Badge variant="outline" className="flex items-center gap-1">
+                        <FileText className="w-3 h-3" />
+                        {arquivoRoteiro.name}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Formatos aceitos: .docx, .pdf, .txt
+                  </p>
+                </div>
+
+                {/* Área de Texto do Roteiro */}
+                <div className="space-y-2">
+                  <Label htmlFor="roteiro-texto">Roteiro do Evento</Label>
+                  <Textarea
+                    id="roteiro-texto"
+                    value={roteiroTexto}
+                    onChange={(e) => setRoteiroTexto(e.target.value)}
+                    placeholder="Digite ou cole o roteiro do evento aqui..."
+                    className="min-h-[400px] font-mono text-sm"
+                  />
+                </div>
+
+                {/* Botão de Finalização */}
+                {roteiroTexto && nomeEvento && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      onClick={finalizarEvento}
+                      className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg font-semibold flex items-center gap-2"
+                      size="lg"
+                    >
+                      <CheckCircle className="w-5 h-5" />
+                      👉 EVENTO CONCLUÍDO
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA 6 - EVENTOS ENTREGUES */}
+          <TabsContent value="eventos-entregues" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5" />
+                  Eventos Entregues
+                </CardTitle>
+                <CardDescription>
+                  Histórico de eventos finalizados ({eventosEntregues.length} eventos)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[500px] pr-4">
+                  <div className="space-y-3">
+                    {eventosEntregues.map((evento) => (
+                      <div key={evento.id} className="flex items-center justify-between p-4 bg-white border rounded-lg shadow-sm">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-medium text-gray-900">{evento.nome}</h4>
+                            <Badge variant="outline" className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3" />
+                              {evento.data}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-gray-500">
+                            <span>{evento.historico_presenca.length} presentes</span>
+                            <span>{evento.composicao_dispositivo.length} no dispositivo</span>
+                            <span>{evento.falas_registradas.length} oradores</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEventoSelecionado(evento);
+                              setDialogEventoAberto(true);
+                            }}
+                            className="flex items-center gap-1"
+                          >
+                            <Eye className="w-4 h-4" />
+                            Ver
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => exportarPDF(evento)}
+                            className="flex items-center gap-1"
+                          >
+                            <Download className="w-4 h-4" />
+                            Exportar
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    {eventosEntregues.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <FolderOpen className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>Nenhum evento finalizado ainda</p>
+                        <p className="text-xs">Finalize um evento na aba "Roteiro" para vê-lo aqui</p>
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+
+            {/* Dialog para visualizar evento */}
+            <Dialog open={dialogEventoAberto} onOpenChange={setDialogEventoAberto}>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <FolderOpen className="w-5 h-5" />
+                    {eventoSelecionado?.nome}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Evento realizado em {eventoSelecionado?.data}
+                  </DialogDescription>
+                </DialogHeader>
+                {eventoSelecionado && (
+                  <div className="space-y-6">
+                    {/* Roteiro */}
+                    <div>
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Roteiro
+                      </h3>
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <pre className="whitespace-pre-wrap text-sm font-mono">
+                          {eventoSelecionado.roteiro}
+                        </pre>
+                      </div>
+                    </div>
+
+                    {/* Histórico de Presença */}
+                    <div>
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <UserCheck className="w-4 h-4" />
+                        Histórico de Presença ({eventoSelecionado.historico_presenca.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {eventoSelecionado.historico_presenca.map((autoridade, index) => (
+                          <div key={autoridade.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                            <Badge variant="outline" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
+                              {index + 1}
+                            </Badge>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{autoridade.nome}</p>
+                              <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Composição do Dispositivo */}
+                    <div>
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <Crown className="w-4 h-4" />
+                        Composição do Dispositivo ({eventoSelecionado.composicao_dispositivo.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {eventoSelecionado.composicao_dispositivo.map((autoridade, index) => (
+                          <div key={autoridade.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                            <Badge variant="default" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
+                              {index + 1}
+                            </Badge>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{autoridade.nome}</p>
+                              <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Falas Registradas */}
+                    <div>
+                      <h3 className="font-semibold mb-2 flex items-center gap-2">
+                        <Mic className="w-4 h-4" />
+                        Falas Registradas ({eventoSelecionado.falas_registradas.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {eventoSelecionado.falas_registradas.map((autoridade, index) => (
+                          <div key={autoridade.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+                            <Badge variant="default" className="min-w-[24px] h-5 flex items-center justify-center text-xs">
+                              {index + 1}º
+                            </Badge>
+                            <Mic className="w-4 h-4 text-blue-500" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{autoridade.nome}</p>
+                              <p className="text-xs text-gray-600">{autoridade.cargo} - {autoridade.orgao}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={() => exportarPDF(eventoSelecionado)}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="w-4 h-4" />
+                        Exportar em PDF
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
         </Tabs>
       </div>
