@@ -21,149 +21,41 @@ export interface AutoridadeDB {
   updated_at?: string
 }
 
-// Funções para interagir com o Supabase
+// Funções para interagir com o Supabase - MODO OFFLINE
 export const supabaseService = {
-  // Buscar todas as autoridades
+  // Buscar todas as autoridades - OFFLINE
   async buscarAutoridades(): Promise<AutoridadeDB[]> {
-    try {
-      const { data, error } = await supabase
-        .from('autoridades')
-        .select('*')
-        .order('precedencia', { ascending: true })
-
-      if (error) {
-        console.error('Erro ao buscar autoridades:', error)
-        throw error
-      }
-
-      return data || []
-    } catch (error) {
-      console.error('Erro na busca de autoridades:', error)
-      return []
-    }
+    console.log('🔄 Modo offline: retornando array vazio para busca')
+    return []
   },
 
-  // Inserir nova autoridade
+  // Inserir nova autoridade - OFFLINE
   async inserirAutoridade(autoridade: Omit<AutoridadeDB, 'id' | 'created_at' | 'updated_at'>): Promise<AutoridadeDB | null> {
-    try {
-      const { data, error } = await supabase
-        .from('autoridades')
-        .insert([{
-          ...autoridade,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Erro ao inserir autoridade:', error)
-        throw error
-      }
-
-      return data
-    } catch (error) {
-      console.error('Erro na inserção de autoridade:', error)
-      return null
-    }
+    console.log('💾 Modo offline: autoridade salva apenas localmente')
+    return null
   },
 
-  // Atualizar autoridade
+  // Atualizar autoridade - OFFLINE
   async atualizarAutoridade(id: string, autoridade: Partial<AutoridadeDB>): Promise<AutoridadeDB | null> {
-    try {
-      const { data, error } = await supabase
-        .from('autoridades')
-        .update({
-          ...autoridade,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', id)
-        .select()
-        .single()
-
-      if (error) {
-        console.error('Erro ao atualizar autoridade:', error)
-        throw error
-      }
-
-      return data
-    } catch (error) {
-      console.error('Erro na atualização de autoridade:', error)
-      return null
-    }
+    console.log('💾 Modo offline: atualização salva apenas localmente')
+    return null
   },
 
-  // Deletar autoridade
+  // Deletar autoridade - OFFLINE
   async deletarAutoridade(id: string): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('autoridades')
-        .delete()
-        .eq('id', id)
-
-      if (error) {
-        console.error('Erro ao deletar autoridade:', error)
-        throw error
-      }
-
-      return true
-    } catch (error) {
-      console.error('Erro na deleção de autoridade:', error)
-      return false
-    }
+    console.log('💾 Modo offline: deleção salva apenas localmente')
+    return true
   },
 
-  // Sincronizar múltiplas autoridades
+  // Sincronizar múltiplas autoridades - OFFLINE
   async sincronizarAutoridades(autoridades: AutoridadeDB[]): Promise<boolean> {
-    try {
-      // Primeiro, buscar autoridades existentes
-      const existentes = await this.buscarAutoridades()
-      const idsExistentes = existentes.map(a => a.id)
-
-      // Separar autoridades para inserir e atualizar
-      const paraInserir = autoridades.filter(a => !idsExistentes.includes(a.id))
-      const paraAtualizar = autoridades.filter(a => idsExistentes.includes(a.id))
-
-      // Inserir novas autoridades
-      if (paraInserir.length > 0) {
-        const { error: errorInsert } = await supabase
-          .from('autoridades')
-          .insert(paraInserir.map(a => ({
-            ...a,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })))
-
-        if (errorInsert) {
-          console.error('Erro ao inserir autoridades:', errorInsert)
-          throw errorInsert
-        }
-      }
-
-      // Atualizar autoridades existentes
-      for (const autoridade of paraAtualizar) {
-        await this.atualizarAutoridade(autoridade.id, autoridade)
-      }
-
-      return true
-    } catch (error) {
-      console.error('Erro na sincronização:', error)
-      return false
-    }
+    console.log('💾 Modo offline: sincronização desabilitada')
+    return false
   },
 
-  // Verificar conexão
+  // Verificar conexão - SEMPRE OFFLINE
   async verificarConexao(): Promise<boolean> {
-    try {
-      const { data, error } = await supabase
-        .from('autoridades')
-        .select('count')
-        .limit(1)
-
-      return !error
-    } catch (error) {
-      console.error('Erro ao verificar conexão:', error)
-      return false
-    }
+    console.log('🔌 Modo offline: conexão desabilitada')
+    return false
   }
 }

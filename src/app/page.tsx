@@ -38,6 +38,9 @@ import {
   Calendar
 } from "lucide-react";
 
+// Importar serviços do Supabase
+import { supabaseService, AutoridadeDB } from "@/lib/supabase";
+
 // Tipos
 interface Autoridade {
   id: string;
@@ -61,6 +64,34 @@ interface EventoEntregue {
   composicao_dispositivo: Autoridade[];
   falas_registradas: Autoridade[];
 }
+
+// Função para converter AutoridadeDB para Autoridade
+const dbParaAutoridade = (autoridadeDB: AutoridadeDB): Autoridade => ({
+  id: autoridadeDB.id,
+  nome: autoridadeDB.nome,
+  cargo: autoridadeDB.cargo,
+  orgao: autoridadeDB.orgao,
+  nivelFederativo: autoridadeDB.nivel_federativo,
+  precedencia: autoridadeDB.precedencia,
+  presente: autoridadeDB.presente,
+  incluirDispositivo: autoridadeDB.incluir_dispositivo,
+  incluirFalas: autoridadeDB.incluir_falas,
+  ordemFala: autoridadeDB.ordem_fala
+});
+
+// Função para converter Autoridade para AutoridadeDB
+const autoridadeParaDB = (autoridade: Autoridade): AutoridadeDB => ({
+  id: autoridade.id,
+  nome: autoridade.nome,
+  cargo: autoridade.cargo,
+  orgao: autoridade.orgao,
+  nivel_federativo: autoridade.nivelFederativo,
+  precedencia: autoridade.precedencia,
+  presente: autoridade.presente,
+  incluir_dispositivo: autoridade.incluirDispositivo,
+  incluir_falas: autoridade.incluirFalas,
+  ordem_fala: autoridade.ordemFala
+});
 
 // Dados das autoridades de Mato Grosso (para inicialização) - com UUIDs válidos
 const autoridadesIniciais: Autoridade[] = [
@@ -201,14 +232,14 @@ function SortableItem({ autoridade, children, index }: { autoridade: Autoridade;
 export default function CerimonialFacil() {
   // Estados principais
   const [autoridades, setAutoridades] = useState<Autoridade[]>([]);
-  const [abaSelecionada, setAbaSelecionada] = useState("lista");
+  const [abaSelecionada, setAbaSelecionada] = useState("roteiro"); // ROTEIRO como primeira aba
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginData, setLoginData] = useState({ usuario: "", senha: "" });
   const [showLogin, setShowLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(false); // SEMPRE FALSE - MODO OFFLINE
   const [isOnline, setIsOnline] = useState(true);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   
@@ -241,40 +272,61 @@ export default function CerimonialFacil() {
     setIsOnline(navigator.onLine);
   }, []);
 
-  // Função para recuperar dados (prioridade: localStorage > dados iniciais)
-  const recuperarDados = useCallback(async () => {
-    console.log('🔄 Iniciando recuperação de dados...');
-    
-    // Tentar carregar do localStorage
-    const dadosLocais = localStorage.getItem('cerimonial-autoridades');
-    if (dadosLocais) {
-      try {
-        const autoridadesSalvas = JSON.parse(dadosLocais);
-        if (autoridadesSalvas && autoridadesSalvas.length > 0) {
-          console.log('💾 Dados carregados do localStorage:', autoridadesSalvas.length, 'autoridades');
-          setAutoridades(autoridadesSalvas);
-          
-          const lastSyncStr = localStorage.getItem('cerimonial-last-sync');
-          if (lastSyncStr) {
-            setLastSync(new Date(lastSyncStr));
-          }
-          
-          toast.info(`Dados locais carregados! ${autoridadesSalvas.length} autoridades.`);
-          return;
-        }
-      } catch (error) {
-        console.warn('⚠️ Erro ao carregar do localStorage:', error);
-      }
-    }
+  // Função para verificar conexão com Supabase - SEMPRE OFFLINE
+  const verificarConexaoSupabase = useCallback(async () => {
+    console.log('🔌 Modo offline: conexão desabilitada');
+    setIsConnected(false);
+    return false;
+  }, []);
 
-    // Usar dados iniciais como fallback
-    console.log('🏁 Usando dados iniciais padrão');
-    setAutoridades(autoridadesIniciais);
+  // Função para sincronizar com Supabase - DESABILITADA
+  const sincronizarComSupabase = useCallback(async (autoridadesLocais?: Autoridade[]) => {
+    console.log('💾 Modo offline: sincronização desabilitada');
+    return false;
+  }, []);
+
+  // Função para recuperar dados (apenas localStorage)
+  const recuperarDados = useCallback(async () => {
+    console.log('🔄 Iniciando recuperação de dados (modo offline)...');
+    setIsLoading(true);
     
-    // Salvar dados iniciais no localStorage para próximas sessões
-    localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesIniciais));
-    
-    toast.success(`Lista de autoridades restaurada! ${autoridadesIniciais.length} autoridades carregadas.`);
+    try {
+      // Carregar do localStorage
+      const dadosLocais = localStorage.getItem('cerimonial-autoridades');
+      if (dadosLocais) {
+        try {
+          const autoridadesSalvas = JSON.parse(dadosLocais);
+          if (autoridadesSalvas && autoridadesSalvas.length > 0) {
+            console.log('💾 Dados carregados do localStorage:', autoridadesSalvas.length, 'autoridades');
+            setAutoridades(autoridadesSalvas);
+            
+            const lastSyncStr = localStorage.getItem('cerimonial-last-sync');
+            if (lastSyncStr) {
+              setLastSync(new Date(lastSyncStr));
+            }
+            
+            toast.info(`💾 ${autoridadesSalvas.length} autoridades carregadas localmente`);
+            return;
+          }
+        } catch (error) {
+          console.warn('⚠️ Erro ao carregar do localStorage:', error);
+        }
+      }
+
+      // Usar dados iniciais como último recurso
+      console.log('🏁 Usando dados iniciais padrão');
+      setAutoridades(autoridadesIniciais);
+      
+      // Salvar dados iniciais no localStorage
+      localStorage.setItem('cerimonial-autoridades', JSON.stringify(autoridadesIniciais));
+      
+      toast.success(`🏁 ${autoridadesIniciais.length} autoridades iniciais carregadas`);
+    } catch (error) {
+      console.error('Erro na recuperação de dados:', error);
+      toast.error('Erro ao carregar dados');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   // Função para carregar eventos entregues
@@ -301,11 +353,12 @@ export default function CerimonialFacil() {
     };
   }, [checkOnlineStatus]);
 
-  // Efeito para inicialização - SEMPRE recuperar dados
+  // Efeito para inicialização
   useEffect(() => {
     recuperarDados();
     carregarEventosEntregues();
-  }, [recuperarDados, carregarEventosEntregues]);
+    verificarConexaoSupabase();
+  }, [recuperarDados, carregarEventosEntregues, verificarConexaoSupabase]);
 
   // Função de login
   const handleLogin = async () => {
@@ -334,10 +387,9 @@ export default function CerimonialFacil() {
     setIsAdmin(false);
     setShowLogin(true);
     setLoginData({ usuario: "", senha: "" });
-    setAbaSelecionada("lista");
+    setAbaSelecionada("roteiro"); // Voltar para ROTEIRO
     setIsConnected(false);
     
-    // NÃO limpar autoridades - manter dados locais
     toast.success("Logout realizado!");
   };
 
@@ -473,7 +525,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     }
   };
 
-  // Função para marcar presença
+  // Função para marcar presença (apenas localStorage)
   const marcarPresenca = async (id: string) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
@@ -501,7 +553,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(novoEstado ? "Presença confirmada!" : "Presença removida!");
   };
 
-  // Função para incluir no dispositivo
+  // Função para incluir no dispositivo (apenas localStorage)
   const incluirDispositivo = async (id: string, incluir: boolean) => {
     const novasAutoridades = autoridades.map(a => 
       a.id === id ? { 
@@ -522,7 +574,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(incluir ? "Adicionado ao dispositivo!" : "Removido do dispositivo!");
   };
 
-  // Função para incluir nas falas
+  // Função para incluir nas falas (apenas localStorage)
   const incluirFalas = async (id: string, incluir: boolean) => {
     const autoridade = autoridades.find(a => a.id === id);
     if (!autoridade) return;
@@ -534,7 +586,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     );
     
     setAutoridades(novasAutoridades);
-    
+
     // Salvar no localStorage
     localStorage.setItem('cerimonial-autoridades', JSON.stringify(novasAutoridades));
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
@@ -543,7 +595,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     toast.success(incluir ? "Adicionado às falas!" : "Removido das falas!");
   };
 
-  // Função para adicionar nova autoridade
+  // Função para adicionar nova autoridade (apenas localStorage)
   const adicionarAutoridade = async () => {
     if (!novaAutoridade.nome || !novaAutoridade.cargo || !novaAutoridade.orgao) {
       toast.error("Preencha todos os campos obrigatórios");
@@ -568,9 +620,10 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
 
+    toast.success("Autoridade adicionada localmente!");
+
     setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
     setDialogAberto(false);
-    toast.success("Autoridade adicionada!");
   };
 
   // Função para editar autoridade
@@ -605,13 +658,14 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
 
+    toast.success("Autoridade atualizada localmente!");
+
     setAutoridadeEditando(null);
     setNovaAutoridade({ nome: "", cargo: "", orgao: "", nivelFederativo: "Estadual" });
     setDialogAberto(false);
-    toast.success("Autoridade atualizada!");
   };
 
-  // Função para remover autoridade
+  // Função para remover autoridade (apenas localStorage)
   const removerAutoridade = async (id: string) => {
     const novasAutoridades = autoridades.filter(a => a.id !== id);
     setAutoridades(novasAutoridades);
@@ -621,7 +675,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
     localStorage.setItem('cerimonial-last-sync', new Date().toISOString());
     setLastSync(new Date());
     
-    toast.success("Autoridade removida!");
+    toast.success("Autoridade removida localmente!");
   };
 
   // Função para atualizar dados manualmente
@@ -733,9 +787,9 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
-            <Badge variant="outline" className="text-xs text-white border-white/30">
-              <Database className="w-3 h-3 mr-1" />
-              Local
+            <Badge variant="outline" className="text-xs text-white border-white/30 bg-orange-500/20">
+              <WifiOff className="w-3 h-3 mr-1" />
+              Offline
             </Badge>
             {lastSync && (
               <Badge variant="outline" className="text-xs text-white border-white/30">
@@ -760,6 +814,10 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
       <div className="max-w-6xl mx-auto p-4">
         <Tabs value={abaSelecionada} onValueChange={setAbaSelecionada} className="space-y-6">
           <TabsList className="grid w-full grid-cols-6 bg-white shadow-sm">
+            <TabsTrigger value="roteiro" className="flex items-center gap-2 text-xs sm:text-sm">
+              <FileText className="w-4 h-4" />
+              <span>Roteiro</span>
+            </TabsTrigger>
             <TabsTrigger value="lista" className="flex items-center gap-2 text-xs sm:text-sm">
               <Users className="w-4 h-4" />
               <span className="hidden sm:inline">Lista de</span>
@@ -778,10 +836,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
               <Mic className="w-4 h-4" />
               <span>Falas</span>
             </TabsTrigger>
-            <TabsTrigger value="roteiro" className="flex items-center gap-2 text-xs sm:text-sm">
-              <FileText className="w-4 h-4" />
-              <span>Roteiro</span>
-            </TabsTrigger>
             <TabsTrigger value="eventos-entregues" className="flex items-center gap-2 text-xs sm:text-sm">
               <FolderOpen className="w-4 h-4" />
               <span className="hidden sm:inline">Eventos</span>
@@ -789,7 +843,91 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </TabsTrigger>
           </TabsList>
 
-          {/* ABA 1 - LISTA DE AUTORIDADES */}
+          {/* ABA 1 - ROTEIRO (AGORA PRIMEIRA ABA) */}
+          <TabsContent value="roteiro" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Roteiro do Evento
+                </CardTitle>
+                <CardDescription>
+                  Faça upload do roteiro ou digite diretamente
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Nome do Evento */}
+                <div className="space-y-2">
+                  <Label htmlFor="nome-evento">Nome do Evento *</Label>
+                  <Input
+                    id="nome-evento"
+                    value={nomeEvento}
+                    onChange={(e) => setNomeEvento(e.target.value)}
+                    placeholder="Digite o nome do evento"
+                  />
+                </div>
+
+                {/* Upload de Arquivo */}
+                <div className="space-y-2">
+                  <Label>Upload de Roteiro</Label>
+                  <div className="flex items-center gap-4">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".docx,.pdf,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      Escolher Arquivo
+                    </Button>
+                    {arquivoRoteiro && (
+                      <Badge variant="outline" className="flex items-center gap-1">
+                        <FileText className="w-3 h-3" />
+                        {arquivoRoteiro.name}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Formatos aceitos: .docx, .pdf, .txt
+                  </p>
+                </div>
+
+                {/* Área de Texto do Roteiro */}
+                <div className="space-y-2">
+                  <Label htmlFor="roteiro-texto">Roteiro do Evento</Label>
+                  <Textarea
+                    id="roteiro-texto"
+                    value={roteiroTexto}
+                    onChange={(e) => setRoteiroTexto(e.target.value)}
+                    placeholder="Digite ou cole o roteiro do evento aqui..."
+                    className="min-h-[400px] font-mono text-sm"
+                  />
+                </div>
+
+                {/* Botão de Finalização */}
+                {roteiroTexto && nomeEvento && (
+                  <div className="flex justify-center pt-4">
+                    <Button
+                      onClick={finalizarEvento}
+                      className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg font-semibold flex items-center gap-2"
+                      size="lg"
+                    >
+                      <CheckCircle className="w-5 h-5" />
+                      👉 EVENTO CONCLUÍDO
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ABA 2 - LISTA DE AUTORIDADES */}
           <TabsContent value="lista" className="space-y-6">
             <Card>
               <CardHeader>
@@ -801,6 +939,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                     </CardTitle>
                     <CardDescription>
                       Autoridades cadastradas no sistema ({autoridadesFiltradas.length} de {autoridades.length} total)
+                      <span className="text-orange-600 ml-2">• Modo Offline</span>
                     </CardDescription>
                   </div>
                   {isAdmin && (
@@ -961,7 +1100,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 2 - REGISTRO DE PRESENÇA (EM ORDEM DE PRECEDÊNCIA) */}
+          {/* ABA 3 - REGISTRO DE PRESENÇA (EM ORDEM DE PRECEDÊNCIA) */}
           <TabsContent value="presenca" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1013,7 +1152,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 3 - DISPOSITIVO (SIMPLIFICADO SEM DRAG AND DROP) */}
+          {/* ABA 4 - DISPOSITIVO (SIMPLIFICADO SEM DRAG AND DROP) */}
           <TabsContent value="dispositivo" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1062,7 +1201,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
             </Card>
           </TabsContent>
 
-          {/* ABA 4 - FALAS (SIMPLIFICADO SEM DRAG AND DROP) - ORDEM INVERSA */}
+          {/* ABA 5 - FALAS (SIMPLIFICADO SEM DRAG AND DROP) - ORDEM INVERSA */}
           <TabsContent value="falas" className="space-y-6">
             <Card>
               <CardHeader>
@@ -1101,90 +1240,6 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                     )}
                   </div>
                 </ScrollArea>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* ABA 5 - ROTEIRO */}
-          <TabsContent value="roteiro" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Roteiro do Evento
-                </CardTitle>
-                <CardDescription>
-                  Faça upload do roteiro ou digite diretamente
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Nome do Evento */}
-                <div className="space-y-2">
-                  <Label htmlFor="nome-evento">Nome do Evento *</Label>
-                  <Input
-                    id="nome-evento"
-                    value={nomeEvento}
-                    onChange={(e) => setNomeEvento(e.target.value)}
-                    placeholder="Digite o nome do evento"
-                  />
-                </div>
-
-                {/* Upload de Arquivo */}
-                <div className="space-y-2">
-                  <Label>Upload de Roteiro</Label>
-                  <div className="flex items-center gap-4">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".docx,.pdf,.txt"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-2"
-                    >
-                      <Upload className="w-4 h-4" />
-                      Escolher Arquivo
-                    </Button>
-                    {arquivoRoteiro && (
-                      <Badge variant="outline" className="flex items-center gap-1">
-                        <FileText className="w-3 h-3" />
-                        {arquivoRoteiro.name}
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-xs text-gray-500">
-                    Formatos aceitos: .docx, .pdf, .txt
-                  </p>
-                </div>
-
-                {/* Área de Texto do Roteiro */}
-                <div className="space-y-2">
-                  <Label htmlFor="roteiro-texto">Roteiro do Evento</Label>
-                  <Textarea
-                    id="roteiro-texto"
-                    value={roteiroTexto}
-                    onChange={(e) => setRoteiroTexto(e.target.value)}
-                    placeholder="Digite ou cole o roteiro do evento aqui..."
-                    className="min-h-[400px] font-mono text-sm"
-                  />
-                </div>
-
-                {/* Botão de Finalização */}
-                {roteiroTexto && nomeEvento && (
-                  <div className="flex justify-center pt-4">
-                    <Button
-                      onClick={finalizarEvento}
-                      className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 text-lg font-semibold flex items-center gap-2"
-                      size="lg"
-                    >
-                      <CheckCircle className="w-5 h-5" />
-                      👉 EVENTO CONCLUÍDO
-                    </Button>
-                  </div>
-                )}
               </CardContent>
             </Card>
           </TabsContent>
