@@ -21,41 +21,126 @@ export interface AutoridadeDB {
   updated_at?: string
 }
 
-// Funções para interagir com o Supabase - MODO OFFLINE
+// Funções para interagir com o Supabase - MODO ONLINE
 export const supabaseService = {
-  // Buscar todas as autoridades - OFFLINE
+  // Buscar todas as autoridades
   async buscarAutoridades(): Promise<AutoridadeDB[]> {
-    console.log('🔄 Modo offline: retornando array vazio para busca')
-    return []
+    try {
+      const { data, error } = await supabase
+        .from('autoridades')
+        .select('*')
+        .order('precedencia', { ascending: true })
+
+      if (error) {
+        console.error('Erro ao buscar autoridades:', error)
+        return []
+      }
+
+      return data || []
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return []
+    }
   },
 
-  // Inserir nova autoridade - OFFLINE
+  // Inserir nova autoridade
   async inserirAutoridade(autoridade: Omit<AutoridadeDB, 'id' | 'created_at' | 'updated_at'>): Promise<AutoridadeDB | null> {
-    console.log('💾 Modo offline: autoridade salva apenas localmente')
-    return null
+    try {
+      const { data, error } = await supabase
+        .from('autoridades')
+        .insert([autoridade])
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao inserir autoridade:', error)
+        return null
+      }
+
+      return data
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return null
+    }
   },
 
-  // Atualizar autoridade - OFFLINE
+  // Atualizar autoridade
   async atualizarAutoridade(id: string, autoridade: Partial<AutoridadeDB>): Promise<AutoridadeDB | null> {
-    console.log('💾 Modo offline: atualização salva apenas localmente')
-    return null
+    try {
+      const { data, error } = await supabase
+        .from('autoridades')
+        .update(autoridade)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('Erro ao atualizar autoridade:', error)
+        return null
+      }
+
+      return data
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return null
+    }
   },
 
-  // Deletar autoridade - OFFLINE
+  // Deletar autoridade
   async deletarAutoridade(id: string): Promise<boolean> {
-    console.log('💾 Modo offline: deleção salva apenas localmente')
-    return true
+    try {
+      const { error } = await supabase
+        .from('autoridades')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        console.error('Erro ao deletar autoridade:', error)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return false
+    }
   },
 
-  // Sincronizar múltiplas autoridades - OFFLINE
+  // Sincronizar múltiplas autoridades
   async sincronizarAutoridades(autoridades: AutoridadeDB[]): Promise<boolean> {
-    console.log('💾 Modo offline: sincronização desabilitada')
-    return false
+    try {
+      const { error } = await supabase
+        .from('autoridades')
+        .upsert(autoridades, { onConflict: 'id' })
+
+      if (error) {
+        console.error('Erro ao sincronizar autoridades:', error)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return false
+    }
   },
 
-  // Verificar conexão - SEMPRE OFFLINE
+  // Verificar conexão
   async verificarConexao(): Promise<boolean> {
-    console.log('🔌 Modo offline: conexão desabilitada')
-    return false
+    try {
+      const { data, error } = await supabase
+        .from('autoridades')
+        .select('count', { count: 'exact', head: true })
+
+      if (error) {
+        console.error('Erro na verificação de conexão:', error)
+        return false
+      }
+
+      return true
+    } catch (error) {
+      console.error('Erro na conexão:', error)
+      return false
+    }
   }
 }

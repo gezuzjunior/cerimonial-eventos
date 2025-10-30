@@ -35,7 +35,9 @@ import {
   CheckCircle,
   Download,
   FolderOpen,
-  Calendar
+  Calendar,
+  ExternalLink,
+  AlertTriangle
 } from "lucide-react";
 
 // Função para gerar UUID compatível
@@ -184,6 +186,8 @@ export default function CerimonialFacil() {
   const [eventosEntregues, setEventosEntregues] = useState<EventoEntregue[]>([]);
   const [eventoSelecionado, setEventoSelecionado] = useState<EventoEntregue | null>(null);
   const [dialogEventoAberto, setDialogEventoAberto] = useState(false);
+  const [dialogExcluirAberto, setDialogExcluirAberto] = useState(false);
+  const [eventoParaExcluir, setEventoParaExcluir] = useState<EventoEntregue | null>(null);
 
   // Função para detectar se está online
   const checkOnlineStatus = useCallback(() => {
@@ -336,6 +340,22 @@ export default function CerimonialFacil() {
     }
   };
 
+  // Função para abrir PDF
+  const abrirPDF = () => {
+    if (!arquivoRoteiro) {
+      toast.error("Nenhum arquivo foi carregado");
+      return;
+    }
+
+    if (arquivoRoteiro.type === "application/pdf") {
+      const url = URL.createObjectURL(arquivoRoteiro);
+      window.open(url, '_blank');
+      toast.success("PDF aberto em nova aba!");
+    } else {
+      toast.error("O arquivo carregado não é um PDF");
+    }
+  };
+
   // Função para finalizar evento
   const finalizarEvento = () => {
     if (!nomeEvento.trim()) {
@@ -383,6 +403,25 @@ export default function CerimonialFacil() {
 
     toast.success("Evento finalizado e salvo com sucesso!");
     setAbaSelecionada("eventos-entregues");
+  };
+
+  // Função para excluir evento
+  const excluirEvento = (evento: EventoEntregue) => {
+    setEventoParaExcluir(evento);
+    setDialogExcluirAberto(true);
+  };
+
+  const confirmarExclusaoEvento = () => {
+    if (!eventoParaExcluir) return;
+
+    const novosEventos = eventosEntregues.filter(e => e.id !== eventoParaExcluir.id);
+    setEventosEntregues(novosEventos);
+    localStorage.setItem('cerimonial-eventos-entregues', JSON.stringify(novosEventos));
+
+    toast.success(`Evento "${eventoParaExcluir.nome}" excluído com sucesso!`);
+    
+    setDialogExcluirAberto(false);
+    setEventoParaExcluir(null);
   };
 
   // Função para exportar PDF
@@ -769,10 +808,23 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                       Escolher Arquivo
                     </Button>
                     {arquivoRoteiro && (
-                      <Badge variant="outline" className="flex items-center gap-1">
-                        <FileText className="w-3 h-3" />
-                        {arquivoRoteiro.name}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="flex items-center gap-1">
+                          <FileText className="w-3 h-3" />
+                          {arquivoRoteiro.name}
+                        </Badge>
+                        {arquivoRoteiro.type === "application/pdf" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={abrirPDF}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Abrir PDF
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1166,6 +1218,17 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                             <Download className="w-4 h-4" />
                             Exportar
                           </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => excluirEvento(evento)}
+                              className="flex items-center gap-1 text-red-600 hover:text-red-700 hover:border-red-300"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Excluir
+                            </Button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1180,6 +1243,7 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
               </CardContent>
             </Card>
 
+            {/* Dialog para visualizar evento */}
             <Dialog open={dialogEventoAberto} onOpenChange={setDialogEventoAberto}>
               <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
@@ -1236,6 +1300,42 @@ ${evento.falas_registradas.map((a, i) => `${i + 1}. ${a.nome} - ${a.cargo} - ${a
                     </div>
                   </div>
                 )}
+              </DialogContent>
+            </Dialog>
+
+            {/* Dialog para confirmar exclusão */}
+            <Dialog open={dialogExcluirAberto} onOpenChange={setDialogExcluirAberto}>
+              <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 text-red-600">
+                    <AlertTriangle className="w-5 h-5" />
+                    Confirmar Exclusão
+                  </DialogTitle>
+                  <DialogDescription>
+                    Tem certeza que deseja excluir o evento "{eventoParaExcluir?.nome}"?
+                    <br />
+                    <span className="text-red-600 font-medium">Esta ação não pode ser desfeita.</span>
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setDialogExcluirAberto(false);
+                      setEventoParaExcluir(null);
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={confirmarExclusaoEvento}
+                    className="flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Excluir Evento
+                  </Button>
+                </div>
               </DialogContent>
             </Dialog>
           </TabsContent>
